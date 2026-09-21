@@ -3,12 +3,62 @@
   --surface:   #13111c;
   --border:    #2a2440;
   --accent:    #c084fc;
+  --accent-rgb: 192, 132, 252;
   --accent2:   #818cf8;
   --warn:      #ff6b6b;
   --text:      #e8e6f0;
   --muted:     #6b6880;
   --radius:    10px;
   --glow:      rgba(192, 132, 252, 0.18);
+  /* GLA role coverage, standalone defaults (used until a [data-theme] below
+     takes over) — see mapping comment above the [data-theme] blocks */
+  --bg0:       #08070d;
+  --bg3:       #1e1a2c;
+  --success:   #4ecca3;
+  --caution:   #f5a623;
+}
+
+/* GLA theme palette (manually synced from ../theme.py — re-copy this block
+   whenever that file's THEME_1..6 change). html[data-theme] is set by
+   static/app.js from the /theme endpoint + the dropdown choice, persisted in
+   localStorage. Role mapping onto this file's existing variable names:
+     bg0 → --bg0, bg → --bg, bg2 → --surface, bg3 → --bg3,
+     accent → --accent, accent2 → --accent2, text → --text, text2 → --muted,
+     green → --success, yellow → --caution, red → --warn.
+   --border and --glow are not GLA roles: --border tracks bg3 (GLA's own
+   "flat, borderless" convention — see GLA's theme.py comments). --accent-rgb
+   is the accent's R,G,B triplet (no '#', no rgb()) so the accent-tinted glow
+   effects below (.logo, .diff-insert) can build rgba(var(--accent-rgb), alpha)
+   and track the theme instead of staying hard-wired to violet. */
+html[data-theme="1"] {
+  --bg0: #0a0b0c; --bg: #111214; --surface: #191b1e; --bg3: #232629; --border: #232629;
+  --accent: #c76a3f; --accent-rgb: 199, 106, 63; --accent2: #9c5330; --text: #e8e9eb; --muted: #9a9ea3;
+  --success: #4ecca3; --caution: #f5c542; --warn: #e94560;
+}
+html[data-theme="2"] {
+  --bg0: #0a0a1a; --bg: #12101f; --surface: #1a1729; --bg3: #231f38; --border: #231f38;
+  --accent: #a259f7; --accent-rgb: 162, 89, 247; --accent2: #6e3fcf; --text: #eaeaea; --muted: #a0a0b0;
+  --success: #4ecca3; --caution: #f5a623; --warn: #e94560;
+}
+html[data-theme="3"] {
+  --bg0: #0d0a08; --bg: #161210; --surface: #201a17; --bg3: #2b231e; --border: #2b231e;
+  --accent: #d98a3d; --accent-rgb: 217, 138, 61; --accent2: #b56c28; --text: #f0e6da; --muted: #b8a894;
+  --success: #4ecca3; --caution: #f5c542; --warn: #e94560;
+}
+html[data-theme="4"] {
+  --bg0: #0e0f0a; --bg: #14150f; --surface: #1c1e15; --bg3: #262919; --border: #262919;
+  --accent: #a9b34d; --accent-rgb: 169, 179, 77; --accent2: #818c37; --text: #eeeadb; --muted: #aeaa96;
+  --success: #4ecca3; --caution: #f5c542; --warn: #e94560;
+}
+html[data-theme="5"] {
+  --bg0: #0a0c0b; --bg: #121513; --surface: #262c2a; --bg3: #3a423e; --border: #3a423e;
+  --accent: #7a9e00; --accent-rgb: 122, 158, 0; --accent2: #6b8c00; --text: #e4e8e5; --muted: #9aa39d;
+  --success: #4ecca3; --caution: #f5c542; --warn: #e94560;
+}
+html[data-theme="6"] {
+  --bg0: #0a0c0b; --bg: #121513; --surface: #262c2a; --bg3: #3a423e; --border: #3a423e;
+  --accent: #1f6488; --accent-rgb: 31, 100, 136; --accent2: #184e69; --text: #e4e8e5; --muted: #9aa39d;
+  --success: #4ecca3; --caution: #f5c542; --warn: #e94560;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,8 +68,8 @@ html { height: 100%; overflow: hidden; }
 body {
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 20% 10%, rgba(129, 60, 180, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(99, 60, 160, 0.10) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 10%, rgba(var(--accent-rgb), 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(var(--accent-rgb), 0.10) 0%, transparent 50%);
   color: var(--text);
   font-family: 'Syne', sans-serif;
   height: 100%;
@@ -46,10 +96,10 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
-  text-shadow: 0 0 20px rgba(192, 132, 252, 0.5);
+  text-shadow: 0 0 20px rgba(var(--accent-rgb), 0.5);
 }
 .logo span { color: var(--text); text-shadow: none; }
-.logo svg { filter: drop-shadow(0 0 6px rgba(192, 132, 252, 0.7)); flex-shrink: 0; }
+.logo svg { filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.7)); flex-shrink: 0; }
 
 .controls {
   display: flex;
@@ -243,43 +293,63 @@ footer {
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn:active { transform: scale(0.97); }
 
+/* Engine-Button-Farben: alle von --accent/--accent2 abgeleitet (color-mix
+   mit white), statt fest verdrahteter Hex-Werte, damit sie mit dem Theme
+   wechseln, aber untereinander unterscheidbar bleiben (Tönungsleiter,
+   Verhältnis wie im ursprünglichen Violet-only-Design). */
 .btn-accent {
   background: var(--accent);
   color: #0c0b12;
   border-color: var(--accent);
 }
-.btn-accent:hover { background: #d8b4fe; border-color: #d8b4fe; color: #0c0b12; }
+.btn-accent:hover {
+  background: color-mix(in srgb, var(--accent), white 25%);
+  border-color: color-mix(in srgb, var(--accent), white 25%);
+  color: #0c0b12;
+}
 
 .btn-deepl {
   background: var(--accent2);
   color: #fff;
   border-color: var(--accent2);
 }
-.btn-deepl:hover { background: #9980ff; border-color: #9980ff; }
+.btn-deepl:hover {
+  background: color-mix(in srgb, var(--accent2), white 25%);
+  border-color: color-mix(in srgb, var(--accent2), white 25%);
+}
 .btn-deepl:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .btn-libre {
-  background: #a78bfa;
+  background: color-mix(in srgb, var(--accent), white 25%);
   color: #0c0b12;
-  border-color: #a78bfa;
+  border-color: color-mix(in srgb, var(--accent), white 25%);
 }
-.btn-libre:hover { background: #c4b5fd; border-color: #c4b5fd; }
+.btn-libre:hover {
+  background: color-mix(in srgb, var(--accent), white 45%);
+  border-color: color-mix(in srgb, var(--accent), white 45%);
+}
 .btn-libre:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .btn-mymemory {
-  background: #c4b5fd;
+  background: color-mix(in srgb, var(--accent), white 50%);
   color: #0c0b12;
-  border-color: #c4b5fd;
+  border-color: color-mix(in srgb, var(--accent), white 50%);
 }
-.btn-mymemory:hover { background: #ddd6fe; border-color: #ddd6fe; }
+.btn-mymemory:hover {
+  background: color-mix(in srgb, var(--accent), white 70%);
+  border-color: color-mix(in srgb, var(--accent), white 70%);
+}
 .btn-mymemory:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .btn-lara {
-  background: #94a3b8;
+  background: color-mix(in srgb, var(--accent2), white 40%);
   color: #0c0b12;
-  border-color: #94a3b8;
+  border-color: color-mix(in srgb, var(--accent2), white 40%);
 }
-.btn-lara:hover { background: #cbd5e1; border-color: #cbd5e1; }
+.btn-lara:hover {
+  background: color-mix(in srgb, var(--accent2), white 60%);
+  border-color: color-mix(in srgb, var(--accent2), white 60%);
+}
 .btn-lara:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .btn-clear {
@@ -361,7 +431,7 @@ footer {
 
 /* ── Coherence Mode — diff + warning notice ── */
 .diff-insert {
-  background: rgba(192, 132, 252, 0.22);
+  background: rgba(var(--accent-rgb), 0.22);
   color: var(--text);
   text-decoration: none;
   border-radius: 3px;

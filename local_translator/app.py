@@ -66,6 +66,7 @@ from core.logging import get_lara_usage
 from core import link_guard
 from core.diff_utils import compute_diff
 from terminology.terminology import term_engine
+from theme import _THEMES as THEMES
 from engines.ollama import (
     detect_mindset,
     run_coherence_pass,
@@ -156,6 +157,10 @@ async def get_mindsets():
         k: {"label": v.get("label", k), "rst_mode": v.get("rst_mode", "")}
         for k, v in MINDSETS.items()
     }
+
+@app.get("/theme")
+async def get_themes():
+    return THEMES
 
 # ── Endpoints — Translation ────────────────────────────────────────────────────
 
