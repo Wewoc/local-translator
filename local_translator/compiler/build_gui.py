@@ -32,7 +32,8 @@ ROOT = Path(__file__).resolve().parent.parent  # compiler/ -> local_translator/
 BUILD_SCRIPT = Path(__file__).resolve().parent / "build.py"
 
 
-def build_command(build_script: Path, mode: str, term_path: str, out_path: str, make_zip: bool) -> list[str]:
+def build_command(build_script: Path, mode: str, term_path: str, out_path: str,
+                   make_zip: bool, with_tester: bool) -> list[str]:
     """
     Pure — no Tkinter, no I/O beyond reading the given strings. Builds the
     compiler/build.py argv for a given GUI selection, or raises ValueError
@@ -57,6 +58,9 @@ def build_command(build_script: Path, mode: str, term_path: str, out_path: str, 
 
     if mode in ("app", "app_term") and not make_zip:
         cmd.append("--no-zip")
+
+    if mode in ("app", "app_term") and with_tester:
+        cmd.append("--with-tester")
 
     return cmd
 
@@ -118,6 +122,11 @@ def run_gui() -> None:
     zip_check = ttk.Checkbutton(opts, text="Release-ZIP erstellen", variable=zip_var)
     zip_check.grid(row=7, column=0, sticky="w", pady=(10, 0), columnspan=3)
 
+    tester_var = tk.BooleanVar(value=False)
+    tester_check = ttk.Checkbutton(
+        opts, text="Batch-Tester mitbauen (test/LocalTranslate-Tester.exe)", variable=tester_var)
+    tester_check.grid(row=8, column=0, sticky="w", pady=(4, 0), columnspan=3)
+
     def _update_field_states(*_):
         mode = mode_var.get()
         term_state = "normal" if mode in ("app_term", "only_term") else "disabled"
@@ -127,6 +136,7 @@ def run_gui() -> None:
         out_entry.configure(state=out_state)
         out_browse.configure(state=out_state)
         zip_check.configure(state="normal" if mode in ("app", "app_term") else "disabled")
+        tester_check.configure(state="normal" if mode in ("app", "app_term") else "disabled")
 
     mode_var.trace_add("write", _update_field_states)
     _update_field_states()
@@ -185,7 +195,8 @@ def run_gui() -> None:
 
     def _on_start():
         try:
-            cmd = build_command(BUILD_SCRIPT, mode_var.get(), term_path_var.get(), out_path_var.get(), zip_var.get())
+            cmd = build_command(BUILD_SCRIPT, mode_var.get(), term_path_var.get(), out_path_var.get(),
+                                 zip_var.get(), tester_var.get())
         except ValueError as exc:
             messagebox.showwarning("LocalTranslate Builder", str(exc))
             return

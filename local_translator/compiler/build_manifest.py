@@ -9,6 +9,15 @@ APP_NAME = "LocalTranslate"
 
 ENTRY_POINT = "app.py"
 
+# Optional second EXE (--with-tester) — the batch quality-test runner
+# (test/test_gui.py + test/runner_core.py). --onefile, not --onedir: it
+# must land directly at dist/<APP_NAME>/test/, with no PyInstaller-created
+# subfolder in between, so its own frozen-path logic (test_gui.py's _HERE)
+# finds source/results next to itself and logs/ one level up, exactly
+# mirroring this file's location inside a checkout.
+TESTER_NAME = "LocalTranslate-Tester"
+TESTER_ENTRY_POINT = "test/test_gui.py"
+
 # Read-only assets bundled into the build via PyInstaller --add-data —
 # (source, dest-inside-bundle), both relative to local_translator/.
 # terminology/ is deliberately NOT here — that's the separate, optional

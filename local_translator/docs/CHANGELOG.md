@@ -13,6 +13,26 @@
   packed terminology engine (`Terminologie-Engine/pack_terminology.py`,
   new) included as `terminology.data` next to the built EXE. See
   `compiler/README.md`.
+- `test/test_gui.py` + `test/runner_core.py` — Tkinter GUI batch runner for
+  quality tests, alongside the existing CSV-driven `test.py`. Pick source
+  texts, S1 models, target languages, and mindsets (individual ones,
+  "General", and/or "Auto-detect" via `/mindset/detect`) by clicking,
+  builds the full cartesian product, runs it against a locally running
+  LocalTranslate server, writes one result `.md` per combination.
+  Start/stop/resume (`batch_progress.jsonl` + `batch_done.marker` per run
+  folder, same model as GLA-NeedfulThings/mcp-llm-tester's GUI runner).
+  Sends the Coherence Mode `coherence_level` on every call (server only
+  acts on it when source lang == target lang, nothing to gate
+  client-side); pins `translategemma*` to the top of the S1/S2 model
+  lists and defaults the mindset-detect model from `/config`. Run via
+  `test/test_gui.py` or `test_gui.bat`. UI kept English throughout (was a
+  German/English mishmash in earlier iterations).
+- `compiler/build.py` — new `--with-tester` flag (checkbox in
+  `build_gui.py`) additionally builds `test/test_gui.py` as a standalone
+  `dist/LocalTranslate/test/LocalTranslate-Tester.exe`, `--onefile` rather
+  than the app's `--onedir` (see "Fixed" below and `compiler/README.md`).
+  Reuses the app's build venv — the tester has no dependencies beyond
+  stdlib + Tkinter.
 
 ### Fixed
 - `core/config.py`/`app.py`: path resolution (`PROJECT_ROOT`, `INDEX_PATH`,
@@ -26,6 +46,13 @@
   (loads it in preference to the loose per-mindset/per-lang JSON tree if
   present), so the terminology engine can be handed over or bundled as one
   file instead of a folder tree.
+- `test/test_gui.py`: `SOURCE_DIR`/`RESULTS_ROOT`/`PERF_LOG` resolved via
+  raw `Path(__file__).parent`, same class of bug already fixed once this
+  session in `core/config.py` — breaks once frozen (PyInstaller), since a
+  bundled module's `__file__` doesn't point next to the EXE. Now resolves
+  its own directory via `sys.executable` when `sys.frozen`, `__file__`
+  otherwise, same pattern as `core/config.py`'s `PROJECT_ROOT`. Needed for
+  the new `--with-tester` build (see "Added").
 
 ## 2026-08-16
 
