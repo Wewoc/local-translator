@@ -12,6 +12,12 @@ Mindset auto-detection classifies the text on first typing pause and sets the op
 
 ---
 
+> **⚠️ Use at your own risk.** No guarantee of translation quality or correctness — always review
+> output before relying on it, especially for critical, legal, or safety-relevant text. Provided
+> as-is, with no warranty of any kind — see [LICENSE](../LICENSE).
+
+---
+
 ## Prerequisites
 
 - **Python 3.9+**
@@ -250,14 +256,20 @@ The file is created automatically. Separator is configurable via `log_csv_separa
 
 ## Quality Testing
 
-`test/` contains a reproducible test runner for comparing model combinations:
+`test/` contains two reproducible test runners for comparing model/mindset/language combinations. Both call the same `/translate/chunk` endpoint the browser UI uses, and write one result MD per run into `test/results/`, including source text, S1 output, S2 output (if configured), and the relevant `perf.csv` rows.
 
-- `test_config.csv` — defines any number of runs: source file, S1 model, S2 model, target language, mindset
+### GUI — `test_gui.bat` / `python test_gui.py`
+
+Pick source texts, S1 models, mindsets (any of the configured ones, "General" as the no-domain baseline, and/or "Auto-detect" via `/mindset/detect`), and target languages by clicking — no config file to get a typo in. Builds the full cartesian product (source × model × mindset × target) and runs it in the background with a progress bar and live log; Start/Stop/Resume works the same way as `mcp-llm-tester`'s GUI (results and an incomplete run's progress land in `test/results/run_<nr>_<date>_<rest>/`, stop-then-resume skips combinations already done). Source language, an optional S2 model, the mindset-detect model, and a Coherence Level (1–6, same scale as the app's own selector) are set once per run, not per combination — Coherence Mode itself just falls out of the matrix: pick the source language as one of the target languages too, and those combinations automatically run as a monolingual proofreading pass instead of a translation (same `source_lang == target_lang` check the app itself uses), tagged `[Coherence]` in the log and `_coherence` in the result filename.
+
+### CLI — `test.bat` / `test.py`
+
+For scripted/unattended runs: `test_config.csv` defines any number of individual runs (source file, S1 model, S2 model, target language, mindset — one row each, no matrix expansion). `test.bat` checks server availability, then runs `test.py`.
+
+### Shared
+
 - `test/source/` — source texts (one file per text type, 300–600 chars recommended)
-- `test.bat` — checks server availability, then runs `test.py`
-- Results land in `test/results/` — one MD file per run, including source text, S1 output, S2 output (if configured), and the relevant `perf.csv` rows for that run
-
-Designed to work alongside external model evaluation (Gemini, ChatGPT, etc.) — results are ready to paste into any analysis tool.
+- Designed to work alongside external model evaluation (Gemini, ChatGPT, etc.) — results are ready to paste into any analysis tool.
 
 ---
 

@@ -3,6 +3,10 @@
 Baut `local_translator` als `--onedir`-PyInstaller-Paket (EXE + Programmordner),
 optional zusammen mit einer gepackten Terminologie-Engine.
 
+> **⚠️ Nutzung auf eigene Gefahr.** Keine Garantie, dass der Build auf jeder Maschine
+> funktioniert oder die weitergegebene EXE fehlerfrei läuft — vor Weitergabe selbst testen.
+> Bereitgestellt ohne jede Gewährleistung — siehe [LICENSE](../../LICENSE).
+
 ## Vor dem Bauen: Version hochzählen
 
 `local_translator/version.py` (`APP_VERSION`) wird nie automatisch gesetzt — vor einem
