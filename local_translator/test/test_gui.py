@@ -36,6 +36,12 @@ PERF_LOG = Path(__file__).parent.parent / "logs" / "perf.csv"
 
 _NO_S2_LABEL = "— kein S2 —"
 
+# Same six levels as index.html's #coherenceLevelSelect — label -> level int.
+COHERENCE_LEVELS = [
+    ("1 — Soft", 1), ("2 — Standard", 2), ("3 — Strong", 3),
+    ("4 — Rewrite Light", 4), ("5 — Rewrite Medium", 5), ("6 — Rewrite Heavy", 6),
+]
+
 # Fallback default for the mindset-detect model if the server's /config
 # doesn't report one (config.yaml's pipeline_mindset_model) — kept in sync
 # with local_translator/config.yaml's own default.
@@ -131,6 +137,7 @@ class BatchTestGui:
         self.source_lang_combo = ttk.Combobox(opts, textvariable=self.source_lang_var,
                                                state="readonly", width=15)
         self.source_lang_combo.grid(row=0, column=1, sticky="w", pady=5)
+        self.source_lang_var.trace_add("write", lambda *_: self._update_coherence_hint())
 
         tk.Label(opts, text="S2 model (optional):").grid(row=0, column=2, sticky="e", padx=(15, 2), pady=5)
         self.s2_var = tk.StringVar(value=_NO_S2_LABEL)
@@ -146,8 +153,25 @@ class BatchTestGui:
         self.reload_button = tk.Button(opts, text="Reload from server", command=self._reload_everything)
         self.reload_button.grid(row=0, column=6, sticky="w", padx=(15, 5), pady=5)
 
+        # Coherence level: always sent along with every /translate/chunk call
+        # (see run_batch_session()) — the server only ever *uses* it when a
+        # combination's source language equals its target language (app.py's
+        # own coherence_mode check), so nothing needs to be enforced here.
+        # This picker just needs to exist; the hint label tells you whether
+        # it's currently relevant to your selection.
+        tk.Label(opts, text="Coherence level (only applies when source = target):").grid(
+            row=1, column=0, columnspan=2, sticky="e", padx=(5, 2), pady=5)
+        self.coherence_level_var = tk.StringVar(value=COHERENCE_LEVELS[1][0])
+        self.coherence_level_combo = ttk.Combobox(
+            opts, textvariable=self.coherence_level_var, state="readonly", width=18,
+            values=[label for label, _level in COHERENCE_LEVELS])
+        self.coherence_level_combo.grid(row=1, column=2, sticky="w", pady=5)
+
+        self.coherence_hint_label = tk.Label(opts, text="", font=("TkDefaultFont", 9, "italic"), fg="#555555")
+        self.coherence_hint_label.grid(row=1, column=3, columnspan=4, sticky="w", padx=(10, 5), pady=5)
+
         self.matrix_label = tk.Label(opts, text="0 combination(s)", font=("TkDefaultFont", 9, "italic"))
-        self.matrix_label.grid(row=1, column=0, columnspan=7, sticky="w", padx=5, pady=(0, 5))
+        self.matrix_label.grid(row=2, column=0, columnspan=7, sticky="w", padx=5, pady=(0, 5))
 
         # Run folder fields
         lauf_frame = tk.LabelFrame(self.root, text="Run folder")
@@ -345,6 +369,24 @@ class BatchTestGui:
                                        f"{len(self._selected_models)} model × "
                                        f"{len(self._selected_mindsets)} mindset × "
                                        f"{len(self._selected_targets)} target)")
+        self._update_coherence_hint()
+
+    def _update_coherence_hint(self) -> None:
+        """Coherence level is always sent along (see the comment at the
+        combo's creation) — this just tells the user whether it currently
+        does anything, by checking whether the selected source language's
+        code is among the selected target codes."""
+        src_code = self._current_source_lang_code()
+        target_codes = {code for _label, code in self._selected_targets}
+        if src_code in target_codes:
+            n_sources = max(len(self._selected_sources), 1) if self._selected_sources else 0
+            n = n_sources * len(self._selected_models) * len(self._selected_mindsets)
+            self.coherence_hint_label.config(
+                text=f"active — source language is among the selected targets ({n} combination(s))",
+                fg="#2e7d32")
+        else:
+            self.coherence_hint_label.config(
+                text="inactive — source language not among the selected targets", fg="#888888")
 
     # ── Run folder naming ─────────────────────────────────────────────
 
@@ -400,6 +442,13 @@ class BatchTestGui:
         v = self.s2_var.get()
         return "" if v == _NO_S2_LABEL else v
 
+    def _current_coherence_level(self) -> int:
+        label = self.coherence_level_var.get()
+        for l, level in COHERENCE_LEVELS:
+            if l == label:
+                return level
+        return 2
+
     def _on_start_new(self) -> None:
         if self._worker_thread is not None and self._worker_thread.is_alive():
             messagebox.showwarning("Run active", "A run is already active. Stop it first.")
@@ -440,7 +489,8 @@ class BatchTestGui:
     def _set_locked(self, locked: bool) -> None:
         state = "disabled" if locked else "normal"
         for w in (self.source_listbox, self.model_listbox, self.mindset_listbox, self.target_listbox,
-                  self.source_lang_combo, self.s2_combo, self.mindset_model_combo, self.reload_button,
+                  self.source_lang_combo, self.s2_combo, self.mindset_model_combo,
+                  self.coherence_level_combo, self.reload_button,
                   self.nr_entry, self.datum_entry, self.freitext_entry):
             w.config(state=state)
 
@@ -462,6 +512,7 @@ class BatchTestGui:
         source_lang = self._current_source_lang_code()
         s2_model = self._current_s2_model()
         mindset_model = self.mindset_model_var.get().strip()
+        coherence_level = self._current_coherence_level()
         stop_event = self._stop_event
         event_queue = self._event_queue
 
@@ -475,7 +526,8 @@ class BatchTestGui:
             try:
                 core.run_batch_session(
                     combos=combos, source_lang=source_lang, s2_model=s2_model,
-                    mindset_model=mindset_model, output_dir=output_dir, perf_log=PERF_LOG,
+                    mindset_model=mindset_model, coherence_level=coherence_level,
+                    output_dir=output_dir, perf_log=PERF_LOG,
                     log_callback=log_cb, progress_callback=progress_cb,
                     stop_event=stop_event, resume=resume,
                 )

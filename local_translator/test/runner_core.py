@@ -107,16 +107,22 @@ def translate_chunk(
     s2_model: str,
     chunk_index: int = 0,
     context: str = "",
+    coherence_level: int = 2,
 ) -> dict:
+    """coherence_level is always sent, whether or not this call is actually
+    a Coherence Mode call — app.py's ChunkRequest only *reads* it inside its
+    own `if coherence_mode:` branch (src_lang == tgt_lang), so it's simply
+    ignored on an ordinary translation call. Nothing to gate client-side."""
     payload = json.dumps({
-        "text":        text,
-        "source_lang": src_lang.upper(),
-        "target_lang": tgt_lang.upper(),
-        "engine":      "ollama",
-        "context":     context,
-        "mindset":     mindset,
-        "s2_model":    s2_model if s2_model and s2_model != "—" else "",
-        "chunk_index": chunk_index,
+        "text":             text,
+        "source_lang":      src_lang.upper(),
+        "target_lang":      tgt_lang.upper(),
+        "engine":           "ollama",
+        "context":          context,
+        "mindset":          mindset,
+        "s2_model":         s2_model if s2_model and s2_model != "—" else "",
+        "chunk_index":      chunk_index,
+        "coherence_level":  coherence_level,
     }).encode()
     req = urllib.request.Request(
         f"{SERVER_URL}/translate/chunk",
@@ -234,11 +240,14 @@ def _build_result_md(
     time_s2: float,
     run_ts: str,
     source_lang: str,
+    is_coherence: bool = False,
+    coherence_level: int = 2,
+    similarities: list[float] | None = None,
 ) -> str:
     has_s2 = bool(s2_model) and s2_model != "—" and s2_translation
 
     lines = [
-        f"# Test — {run_ts}",
+        f"# Test — {run_ts}" + (" [Coherence Mode]" if is_coherence else ""),
         "",
         "## Run",
         "",
@@ -246,14 +255,19 @@ def _build_result_md(
         "|---|---|",
         f"| Source | `{combo.source.name}` |",
         f"| S1 model | `{combo.model_s1}` |",
-        f"| S2 model | `{s2_model or '—'}` |",
+        f"| S2 model | `{'skipped — Coherence Mode' if is_coherence else (s2_model or '—')}` |",
         f"| Source lang | `{source_lang.upper()}` |",
         f"| Target lang | `{combo.target_code.upper()}` |",
         f"| Mindset | `{combo.mindset_label}`" + (f" (resolved: `{resolved_mindset}`)" if combo.mindset_key == AUTO_MINDSET else "") + " |",
         f"| S1 time | {int(round(time_s1))}s |",
         f"| S2 time | {int(round(time_s2))}s |",
-        "",
     ]
+    if is_coherence:
+        lines.append(f"| Coherence level | {coherence_level} |")
+        if similarities:
+            avg = sum(similarities) / len(similarities)
+            lines.append(f"| Similarity (avg over {len(similarities)} chunk(s)) | {avg:.3f} |")
+    lines.append("")
 
     if len(perf_rows) > 1:
         lines += ["## Performance Log", "", "```"] + perf_rows + ["```", ""]
@@ -273,6 +287,7 @@ def run_batch_session(
     source_lang: str,
     s2_model: str,
     mindset_model: str,
+    coherence_level: int,
     output_dir: Path,
     perf_log: Path,
     log_callback=lambda line: None,
@@ -332,9 +347,12 @@ def run_batch_session(
                     continue
             resolved_mindset = auto_cache[combo.source]
 
+        is_coherence = source_lang.upper() == combo.target_code.upper()
         log_callback(
             f"[{idx}/{total}] {combo.source.name} | S1={combo.model_s1} | "
-            f"{source_lang.upper()}→{combo.target_code.upper()} | mindset={combo.mindset_label}"
+            f"{source_lang.upper()}→{combo.target_code.upper()}"
+            + (" [Coherence]" if is_coherence else "")
+            + f" | mindset={combo.mindset_label}"
             + (f" ({resolved_mindset})" if combo.mindset_key == AUTO_MINDSET else "")
         )
 
@@ -347,22 +365,29 @@ def run_batch_session(
 
             t0 = time.monotonic()
             s1_parts = []
+            similarities = []
             context = ""
             for i, chunk in enumerate(chunks):
                 data = translate_chunk(chunk, source_lang, combo.target_code, resolved_mindset,
-                                        s2_model, i, context)
+                                        s2_model, i, context, coherence_level)
                 part = data.get("translation", "")
                 s1_parts.append(part)
                 context = part[-300:] if part else ""
+                if "similarity" in data:
+                    similarities.append(data["similarity"])
             time_s1 = time.monotonic() - t0
             s1_translation = "\n\n".join(s1_parts)
 
+            # The server's coherence_mode branch (src == tgt) always skips
+            # S2 regardless of s2_model — see app.py's translate_chunk
+            # endpoint — so this call only actually runs an S2 pass outside
+            # Coherence Mode, same as the CSV-driven test.py.
             s2_translation = ""
             time_s2 = 0.0
-            if s2_model and s2_model != "—":
+            if s2_model and s2_model != "—" and not is_coherence:
                 t1 = time.monotonic()
                 data_s2 = translate_chunk(s1_translation, combo.target_code, combo.target_code,
-                                           resolved_mindset, "")
+                                           resolved_mindset, "", coherence_level=coherence_level)
                 time_s2 = time.monotonic() - t1
                 s2_translation = data_s2.get("translation", "")
 
@@ -372,12 +397,14 @@ def run_batch_session(
             result_md = _build_result_md(
                 combo, source_text, resolved_mindset, s1_translation, s2_model,
                 s2_translation, perf_rows, time_s1, time_s2, run_ts, source_lang,
+                is_coherence=is_coherence, coherence_level=coherence_level, similarities=similarities,
             )
 
             mindset_tag = resolved_mindset if combo.mindset_key != AUTO_MINDSET else f"auto-{resolved_mindset}"
+            coherence_tag = "_coherence" if is_coherence else ""
             out_name = (
                 f"{date_str}_{safe_filename(combo.model_s1.replace(':', '-'))}_"
-                f"{safe_filename(combo.source.stem)}_{combo.target_code.lower()}_"
+                f"{safe_filename(combo.source.stem)}_{combo.target_code.lower()}{coherence_tag}_"
                 f"{safe_filename(mindset_tag)}.md"
             )
             (results_dir / out_name).write_text(result_md, encoding="utf-8")
