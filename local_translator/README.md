@@ -90,16 +90,37 @@ writing before it goes out.
   to same-language text. A small "⬡ Coherence Mode" label appears in the header.
 - The result is shown as a diff against your original text (insertions/deletions
   highlighted), so you can see exactly what changed before trusting it.
-- If the edit deviates unusually far from the original (similarity below 60%), a
-  warning banner appears above the result — review it closely before using it.
+- If the edit deviates unusually far from the original, a warning banner appears
+  above the result — review it closely before using it. The similarity threshold
+  that triggers this warning depends on the selected intensity level (see below).
 
-**Current scope:** only the "light" editing level (connectors and sentence
-transitions) is implemented. A stronger level (sentence restructuring) and an
-adjustable intensity slider are planned for a later session, after real-world
-testing of this first version. Long texts (> `ollama_chunk_size`, default 6000
-chars) are edited chunk by chunk without cross-chunk context — transitions
-exactly at chunk boundaries may be smoothed less effectively than transitions
-within a chunk.
+**Intervention depth:** a dropdown next to the "⬡ Coherence Mode" label selects
+how far the pass may depart from your original text:
+
+| Level | Scope |
+|---|---|
+| **1 — Soft** | Only connectors and transition words between sentences. No sentence restructuring. |
+| **2 — Standard** (default) | Smooths transitions, restructures a sentence only if necessary for a smooth transition. |
+| **3 — Strong** | + may reorder sentences within a paragraph where it improves the flow. |
+| **4 — Rewrite Light** | + may rephrase entire sentences and change word choice freely. |
+| **5 — Rewrite Medium** | + may reorder content within a paragraph and shorten redundant passages. |
+| **6 — Rewrite Heavy** | + may freely restructure and rewrite across paragraphs, using the input as source material. |
+
+Every level keeps the same hard limits regardless of intensity: no new information
+added, no existing idea dropped, no meaning/tone change, placeholders and
+Markdown/code blocks left untouched.
+
+**Model choice matters more than the level setting.** Levels 4–6 need a
+general-purpose editing/chat model — translation-specialized models (e.g.
+`translategemma:12b`) tend to leave the text almost unchanged even at "Rewrite
+Heavy", regardless of prompt or temperature. `dolphin3` has shown noticeably more
+willingness to actually restructure at the higher levels in testing. If a high
+intensity level produces only minor edits, try switching the S1 model first
+before assuming the level itself isn't working.
+
+Long texts (> `ollama_chunk_size`, default 6000 chars) are edited chunk by chunk
+without cross-chunk context — transitions exactly at chunk boundaries may be
+smoothed less effectively than transitions within a chunk.
 
 ---
 
