@@ -13,18 +13,40 @@ Does not import anything else from this project.
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
+#
+# Two roots once this runs frozen (PyInstaller --onedir):
+#
+#   PROJECT_ROOT — sys.executable's folder. The stable install directory
+#     (sibling of the EXE's _internal/ in --onedir). User-editable/
+#     persistent files belong here: config.yaml, lara_usage.json,
+#     exports/, logs/.
+#
+#   _BUNDLE_ROOT — sys._MEIPASS. Read-only assets added via PyInstaller's
+#     --add-data land here: index.html, pipeline/mindsets.json.
+#
+# Dev (not frozen): both are PROJECT_ROOT, __file__-based as before.
+# Never resolve paths via Path(__file__).parent in other modules instead
+# of importing from here — breaks the moment this runs frozen.
 
-PROJECT_ROOT  = Path(__file__).resolve().parent.parent
-CONFIG_PATH   = PROJECT_ROOT / "config.yaml"
-MINDSETS_PATH = PROJECT_ROOT / "pipeline" / "mindsets.json"
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+    _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    _BUNDLE_ROOT = PROJECT_ROOT
+
+CONFIG_PATH     = PROJECT_ROOT / "config.yaml"
+MINDSETS_PATH   = _BUNDLE_ROOT / "pipeline" / "mindsets.json"
 LARA_USAGE_FILE = PROJECT_ROOT / "lara_usage.json"
-INDEX_PATH    = PROJECT_ROOT / "index.html"
+INDEX_PATH      = _BUNDLE_ROOT / "index.html"
+STATIC_DIR      = _BUNDLE_ROOT / "static"
 
 # ── Load config ───────────────────────────────────────────────────────────────
 
