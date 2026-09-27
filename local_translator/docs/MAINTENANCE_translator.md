@@ -417,3 +417,23 @@ gefrorene Module nicht mehr aussagekräftig — deshalb die Unterscheidung:
 Nie relative Pfade wie `Path(__file__).parent / "pipeline"` in Untermodulen verwenden
 statt sie von hier zu importieren — das bricht, sobald der Build eingefroren läuft
 (`app.py`s Static-Mount hatte genau dieses Problem, siehe oben).
+
+---
+
+## Version — APP_VERSION
+
+Einzige Quelle: `version.py` (Projektstamm), eine einzelne Konstante:
+
+```python
+APP_VERSION = "0.1.0"
+```
+
+Wird von Hand hochgezählt — nichts leitet sie automatisch her, kein Git-Commit, kein
+Build-Zähler. `app.py` importiert sie, setzt sie als `FastAPI(version=...)` und gibt sie
+über `/config` an die Oberfläche weiter (`static/app.js`s `init()` schreibt sie in
+`#appVersion` in der Statusleiste, rechtsbündig). Wer eine Version für einen Build
+weitergeben will, für den ein "welche Version läuft da eigentlich" später wichtig sein
+könnte (siehe `compiler/README.md`), hebt sie vor dem Bauen von Hand an.
+
+Start bei `0.1.0` statt `1.0.0`, weil `README.md` das Projekt selbst noch als
+"Beta / Work in Progress" führt — reine Konvention, keine technische Notwendigkeit.

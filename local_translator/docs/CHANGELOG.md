@@ -1,5 +1,32 @@
 # Changelog — LocalTranslate
 
+## 2026-09-27
+
+### Added
+- `version.py` — single-source `APP_VERSION`, manually bumped, no
+  auto-derivation. Exposed via `/config` and `FastAPI(version=...)`, shown
+  in the UI's status bar (`#appVersion`, right-aligned). Starts at `0.1.0`
+  (README still marks the project Beta). See `docs/MAINTENANCE_translator.md`
+  ("Version — APP_VERSION") and `compiler/README.md` for when to bump it.
+- `local_translator/compiler/` — standalone `--onedir` PyInstaller build
+  (`build.py`, `build_manifest.py`, `build_gui.py`), with an optional
+  packed terminology engine (`Terminologie-Engine/pack_terminology.py`,
+  new) included as `terminology.data` next to the built EXE. See
+  `compiler/README.md`.
+
+### Fixed
+- `core/config.py`/`app.py`: path resolution (`PROJECT_ROOT`, `INDEX_PATH`,
+  `MINDSETS_PATH`, the `/static` mount) used `Path(__file__)`-based
+  resolution, which breaks once the app runs as a PyInstaller build —
+  frozen modules aren't real files at that path. Now distinguishes
+  `PROJECT_ROOT` (`sys.executable`'s folder — user-editable files) from
+  `_BUNDLE_ROOT` (`sys._MEIPASS` — `--add-data` assets) when frozen, dev
+  mode unchanged.
+- `terminology/terminology.py`: added `terminology.data` pack-file support
+  (loads it in preference to the loose per-mindset/per-lang JSON tree if
+  present), so the terminology engine can be handed over or bundled as one
+  file instead of a folder tree.
+
 ## 2026-08-16
 
 ### Fixed

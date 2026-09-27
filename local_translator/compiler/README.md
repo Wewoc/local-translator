@@ -3,6 +3,14 @@
 Baut `local_translator` als `--onedir`-PyInstaller-Paket (EXE + Programmordner),
 optional zusammen mit einer gepackten Terminologie-Engine.
 
+## Vor dem Bauen: Version hochzählen
+
+`local_translator/version.py` (`APP_VERSION`) wird nie automatisch gesetzt — vor einem
+Build, den du weitergibst, von Hand anheben, wenn sich seit dem letzten Build etwas
+geändert hat. Die Version steht danach rechts in der Statusleiste der laufenden App —
+so lässt sich unterscheiden, welchen Stand ein Freund gerade tatsächlich nutzt (siehe
+`docs/MAINTENANCE_translator.md`, Abschnitt "Version").
+
 ## Voraussetzungen
 
 - Python auf der Baumaschine (irgendeine Version, die `venv` kann).
