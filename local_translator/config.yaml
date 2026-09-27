@@ -39,6 +39,11 @@ pipeline_s2_model: ""            # quality/terminology pass — empty = disabled
 pipeline_mindset_model: "phi4-mini:latest"       # mindset detection — empty = falls back to active S1 model (e.g. "phi4-mini:latest")
 
 # Unterstützte Sprachen (Anzeigename: API-Code)
+# Russisch/Chinesisch/Japanisch bewusst raus: translategemma (und die meisten
+# offenen Ollama-Modelle allgemein) sind primär auf westliche/lateinschriftliche
+# Sprachen trainiert und optimiert — kyrillische/CJK-Qualität ist unklar bis
+# unterdurchschnittlich. Vor einem Wiedereinbau mit dem Batch-Testrunner
+# (local_translator/test/) an echten Texten gegenprüfen.
 languages:
   Deutsch: "DE"
   Englisch: "EN"
@@ -48,9 +53,6 @@ languages:
   Portugiesisch: "PT"
   Niederländisch: "NL"
   Polnisch: "PL"
-  Russisch: "RU"
-  Chinesisch: "ZH"
-  Japanisch: "JA"
 
 # Export
 export_dir: "exports"            # Ordner für MD-Exporte (wird auto-erstellt)
