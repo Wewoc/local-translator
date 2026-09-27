@@ -36,6 +36,17 @@ PERF_LOG = Path(__file__).parent.parent / "logs" / "perf.csv"
 
 _NO_S2_LABEL = "— kein S2 —"
 
+# Fallback default for the mindset-detect model if the server's /config
+# doesn't report one (config.yaml's pipeline_mindset_model) — kept in sync
+# with local_translator/config.yaml's own default.
+_FALLBACK_MINDSET_MODEL = "phi4-mini:latest"
+
+
+def _sort_models_pinned(models: list[str]) -> list[str]:
+    """Sorts alphabetically, but any model whose name starts with
+    'translategemma' (case-insensitive) always comes first."""
+    return sorted(models, key=lambda m: (0, m.lower()) if m.lower().startswith("translategemma") else (1, m.lower()))
+
 
 def format_elapsed(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
@@ -255,9 +266,9 @@ class BatchTestGui:
         if not self._sources_all:
             self._append_log(f"No source texts found in {SOURCE_DIR} — drop .md/.txt files there.")
 
-        # Models
+        # Models — translategemma pinned to the top, rest alphabetical
         try:
-            self._models_all = sorted(core.fetch_ollama_models())
+            self._models_all = _sort_models_pinned(core.fetch_ollama_models())
         except Exception as e:
             self._append_log(f"[ERROR] Could not fetch Ollama models: {e}")
             self._models_all = []
@@ -285,12 +296,17 @@ class BatchTestGui:
         for c in self._mindsets_all:
             self.mindset_listbox.insert(tk.END, c.label)
 
-        # Target languages
+        # Target languages + mindset-detect default — both come straight off
+        # /config, the same endpoint the translator's own dropdowns use, so
+        # this list is always exactly what the running server currently
+        # offers (call "Reload from server" again after editing config.yaml
+        # and restarting the server to pick up a change).
         try:
-            languages = core.fetch_languages()
+            cfg = core.fetch_config()
         except Exception as e:
-            self._append_log(f"[ERROR] Could not fetch languages: {e}")
-            languages = {}
+            self._append_log(f"[ERROR] Could not fetch /config: {e}")
+            cfg = {}
+        languages = cfg.get("languages", {})
         self._targets_all = list(languages.items())
         self._selected_targets = [t for t in self._selected_targets if t in self._targets_all]
         self.target_listbox.delete(0, tk.END)
@@ -299,6 +315,10 @@ class BatchTestGui:
         self.source_lang_combo["values"] = [label for label, _code in self._targets_all]
         if self.source_lang_var.get() not in self.source_lang_combo["values"] and self._targets_all:
             self.source_lang_var.set(self._targets_all[0][0])
+
+        # Only pre-fill once — don't clobber a value the user already typed.
+        if not self.mindset_model_var.get().strip():
+            self.mindset_model_var.set(cfg.get("mindset_model") or _FALLBACK_MINDSET_MODEL)
 
         self._refresh_selected_boxes()
         self._update_matrix_label()

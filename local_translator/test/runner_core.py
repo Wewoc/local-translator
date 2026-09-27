@@ -60,12 +60,6 @@ def fetch_mindsets() -> dict[str, str]:
     return {k: v.get("label", k) for k, v in data.items()}
 
 
-def fetch_languages() -> dict[str, str]:
-    """Returns {display name: ISO code}, e.g. {"Deutsch": "DE", "Englisch": "EN"}."""
-    cfg = fetch_config()
-    return dict(cfg.get("languages", {}))
-
-
 # ── Translation calls — same endpoints the browser UI uses ──────────────────
 
 def prepare_chunks(text: str) -> list[str]:
