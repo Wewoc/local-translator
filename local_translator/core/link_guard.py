@@ -168,12 +168,75 @@ def protect(text: str) -> LinkGuardResult:
     return LinkGuardResult(protected_text=result, mapping=mapping)
 
 
+def _repair(text: str, mapping: dict[str, str]) -> str:
+    """
+    Recovers placeholders damaged by the LLM — whitespace inside intact
+    delimiters (§ L12345678 §), or delimiters dropped or swapped for
+    brackets/parens ([L12345678], (L12345678)) — the same class of damage
+    TermEngine._repair() handles for §Txxxxxxxx§. Only repairs ids actually
+    issued for this call (from `mapping`); never guesses at an id that
+    wasn't.
+    """
+    ids = set()
+    prefix_re = re.compile(re.escape(PLACEHOLDER_PREFIX) + r"(\d+)" + re.escape(PLACEHOLDER_SUFFIX))
+    for placeholder in mapping:
+        m = prefix_re.fullmatch(placeholder)
+        if m:
+            ids.add(m.group(1))
+    if not ids:
+        return text
+
+    id_alt = "|".join(sorted(ids))
+    loose = re.compile(
+        r"(?:[§\[({<]{1,2}\s*)?L(" + id_alt + r")(?:\s*[§\])}>]{1,2})?"
+    )
+
+    def normalize(m):
+        canonical = f"{PLACEHOLDER_PREFIX}{m.group(1)}{PLACEHOLDER_SUFFIX}"
+        return mapping.get(canonical, m.group(0))
+
+    return loose.sub(normalize, text)
+
+
 def restore(text: str, mapping: dict[str, str]) -> str:
     """Reinsert originals for every placeholder in `mapping`."""
     result = text
     for placeholder, original in mapping.items():
         result = result.replace(placeholder, original)
+    result = _repair(result, mapping)
     return result
+
+
+def strip_unresolved(text: str, mapping: dict[str, str]) -> tuple[str, list[str]]:
+    """
+    Final safety net, run after restore(): removes any §L...§-shaped token
+    still present — a known id restore()/_repair() couldn't match, or one
+    that was never issued for this call at all (the model hallucinating a
+    well-formed-looking placeholder) — so a raw internal token never
+    reaches the visible output.
+
+    Returns (cleaned_text, warnings). Each warning names the exact token
+    removed and, when known, the original it should have carried — the
+    same text this gets logged as server-side, so the two can be matched
+    up.
+    """
+    warnings: list[str] = []
+
+    def _strip(m):
+        token = m.group(0)
+        original = mapping.get(token)
+        if original:
+            warnings.append(f"Link/path placeholder left unresolved and stripped: {token} (was: '{original}')")
+        else:
+            warnings.append(f"Unknown/hallucinated link placeholder stripped: {token}")
+        return ""
+
+    cleaned = _PLACEHOLDER_SHAPE_RE.sub(_strip, text)
+    if warnings:
+        # collapse the double space a removed token typically leaves behind
+        # between two surrounding words — never touches newlines/paragraphs
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned, warnings
 
 
 def verify(restored: str, mapping: dict[str, str]) -> list[str]:

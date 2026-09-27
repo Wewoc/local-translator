@@ -56,6 +56,97 @@
   its own directory via `sys.executable` when `sys.frozen`, `__file__`
   otherwise, same pattern as `core/config.py`'s `PROJECT_ROOT`. Needed for
   the new `--with-tester` build (see "Added").
+- Legal-mindset test run (`translategemma:12b`, DE→EN) leaked a raw,
+  half-mangled term-engine placeholder into the output: `§Ta5d01bf9§`
+  ("Höhere Gewalt") came back as `Section [Ta5d01bf9]`. Root cause:
+  `translate_ollama()`'s S1 prompt never told the model to leave
+  `§Txxxxxxxx§`/`§Lxxxxxxxx§` tokens alone (unlike `run_coherence_pass()`,
+  which already has this instruction) — the model read the `§` as a legal
+  section mark, plausible in legal source text that itself uses `§ 4 ...`,
+  and reformatted the placeholder into a citation-style `Section [...]`,
+  which `TermEngine.restore()`'s exact-match `str.replace()` then couldn't
+  catch.
+- `engines/ollama.py` → `translate_ollama()`: added the same
+  placeholder-preservation instruction `run_coherence_pass()` already
+  carries, so S1 is told up front not to touch `§...§` tokens.
+- `terminology/terminology.py` → `TermEngine._repair()`: post-processing
+  safety net broadened beyond whitespace-only damage (`§ T1a2b3c4d §`) to
+  also catch delimiters dropped or swapped for brackets/parens
+  (`[T1a2b3c4d]`, `(T1a2b3c4d)`) or dropped entirely (`T1a2b3c4d`) —
+  matches only ids actually issued for the current call (via `code_map`),
+  never arbitrary T-shaped hex strings, so it can't misfire on real prose.
+  Falls back to the source-language term if the target-language term is
+  missing, so a protected term always ends up back in the output as real
+  text instead of a dangling code. `restore()` now passes `code_map`
+  through to `_repair()` for this.
+- `TermEngine.verify()`: dropped the "Code lost" check — it compared
+  `protected` vs. `restored` and flagged every code no longer literally
+  present in `restored`, which is also true for every *successfully*
+  restored term (the code is gone because it was replaced by real text),
+  so it was reporting `[TermEngine] Code lost: ...` as a false positive on
+  every clean translation. Kept the "Code not replaced" check (canonical
+  `§Txxxxxxxx§` still present verbatim), the only signal that now remains
+  meaningful given `_repair()`'s broadened coverage above.
+- Verified: reproduced the exact `Section [Ta5d01bf9]` failure from the
+  test report, confirmed `restore()` now resolves it to the real target
+  term with correct spacing, confirmed whitespace-damaged and bare
+  (no-delimiter) variants repair cleanly too, and confirmed a normal clean
+  restore no longer trips `verify()`.
+- A follow-up batch re-run (same test suite, both `translategemma:12b` and
+  `:4b`) confirmed the legal-mindset fix above, but surfaced a related,
+  independent failure: `.../mindset_test_marketing_..._auto-marketing.md`
+  (12b) ended with a bare `§L12345678§` — a `link_guard` placeholder with
+  an id that was never issued (`terms_protected: 0`, no URL in the source
+  text at all), i.e. the model hallucinated a well-formed-looking token
+  rather than mangling a real one. Neither `link_guard.restore()` (exact-
+  match only) nor `verify()` (report-only, no repair, deliberately, per
+  the 2026-08-15 entry above) could turn this into real content, so the
+  raw token reached the visible output.
+- `core/link_guard.py`: added `_repair()`, mirroring `TermEngine._repair()`
+  — recovers ids actually issued for the call (from `mapping`) that got
+  whitespace-damaged or had their delimiters dropped/swapped for brackets/
+  parens; wired into `restore()`. New `strip_unresolved(text, mapping)`
+  final safety net: removes any `§L...§`-shaped token still left after
+  that — known-but-unrecoverable or entirely unknown/hallucinated — so it
+  never reaches the visible output, and returns what it removed instead of
+  the token silently vanishing.
+- `terminology/terminology.py`: added the equivalent `TermEngine.
+  strip_unresolved(text, code_map)` — `_repair()` only ever touched ids
+  actually issued for the call, so a hallucinated `§Txxxxxxxx§` with an
+  unknown id would previously slip past both `_repair()` and `verify()`
+  (which only checks ids present in `code_map`) entirely unnoticed.
+- `app.py`: both `/translate` and `/translate/chunk` now call
+  `strip_unresolved()` for TermEngine and link_guard right after their
+  `restore()` calls, replacing the old report-only `verify()` calls (a
+  strict superset: same detection, plus removal). Collected warnings are
+  logged server-side (`[TermEngine] ...` / `[LinkGuard] ...`, chunk-
+  indexed on `/translate/chunk`) and now also returned to the caller as
+  `response["warnings"]` — same text in both places, so a caller and the
+  server log can be matched up directly instead of the caller having no
+  visibility into a silent strip.
+- `test/runner_core.py`: `translate_chunk()` responses' `warnings` are
+  collected across all chunks (S1 and, if run, S2) and passed into
+  `_build_result_md()`, which now renders a `## Warnings` section right
+  under the `## Run` table (plus a one-line count in the table itself)
+  when any were stripped — so a batch test report shows what happened and
+  where, instead of a silently cleaned-up translation looking identical to
+  one that never had a problem. `test/test.py` (the separate CSV-driven
+  runner) was not touched — not the runner these reports came from.
+- Verified: reproduced the exact `§L12345678§` case (no mapping entry at
+  all) — `strip_unresolved()` removes it and reports "Unknown/hallucinated
+  link placeholder stripped", and a recoverable case (known id, delimiters
+  swapped for brackets, e.g. `[L12345678]`) is resolved back to the real
+  URL by the new `_repair()` before `strip_unresolved()` ever sees it.
+- Verified end-to-end against the real pipeline (not just unit-level): a
+  full batch re-run (`translategemma:12b`/`:4b`, all mindsets, live Ollama)
+  reproduced the original `marketing/12b` hallucination one more time and
+  confirmed the fix in place — the `## Run` table shows `Warnings | 1 —
+  see below, also logged server-side`, the new `## Warnings` section reads
+  `[LinkGuard] chunk 0: Unknown/hallucinated link placeholder stripped:
+  §L12345678§`, and the translation text itself ends cleanly with no raw
+  placeholder. All other mindsets/combos in the same run stayed clean,
+  including the legal-mindset `force majeure` case from the first fix
+  above, confirming no regression.
 
 ## 2026-08-16
 

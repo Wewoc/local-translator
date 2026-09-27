@@ -243,6 +243,7 @@ def _build_result_md(
     is_coherence: bool = False,
     coherence_level: int = 2,
     similarities: list[float] | None = None,
+    warnings: list[str] | None = None,
 ) -> str:
     has_s2 = bool(s2_model) and s2_model != "—" and s2_translation
 
@@ -267,7 +268,14 @@ def _build_result_md(
         if similarities:
             avg = sum(similarities) / len(similarities)
             lines.append(f"| Similarity (avg over {len(similarities)} chunk(s)) | {avg:.3f} |")
+    if warnings:
+        lines.append(f"| Warnings | {len(warnings)} — see below, also logged server-side |")
     lines.append("")
+
+    if warnings:
+        lines += ["## Warnings", ""]
+        lines += [f"- {w}" for w in warnings]
+        lines.append("")
 
     if len(perf_rows) > 1:
         lines += ["## Performance Log", "", "```"] + perf_rows + ["```", ""]
@@ -366,6 +374,7 @@ def run_batch_session(
             t0 = time.monotonic()
             s1_parts = []
             similarities = []
+            warnings = []
             context = ""
             for i, chunk in enumerate(chunks):
                 data = translate_chunk(chunk, source_lang, combo.target_code, resolved_mindset,
@@ -375,6 +384,7 @@ def run_batch_session(
                 context = part[-300:] if part else ""
                 if "similarity" in data:
                     similarities.append(data["similarity"])
+                warnings += data.get("warnings", [])
             time_s1 = time.monotonic() - t0
             s1_translation = "\n\n".join(s1_parts)
 
@@ -390,6 +400,7 @@ def run_batch_session(
                                            resolved_mindset, "", coherence_level=coherence_level)
                 time_s2 = time.monotonic() - t1
                 s2_translation = data_s2.get("translation", "")
+                warnings += data_s2.get("warnings", [])
 
             t_end = datetime.now()
             perf_rows = read_perf_rows(t_start, t_end, perf_log)
@@ -398,6 +409,7 @@ def run_batch_session(
                 combo, source_text, resolved_mindset, s1_translation, s2_model,
                 s2_translation, perf_rows, time_s1, time_s2, run_ts, source_lang,
                 is_coherence=is_coherence, coherence_level=coherence_level, similarities=similarities,
+                warnings=warnings,
             )
 
             mindset_tag = resolved_mindset if combo.mindset_key != AUTO_MINDSET else f"auto-{resolved_mindset}"

@@ -187,6 +187,7 @@ async def translate_chunk(req: ChunkRequest):
         return {"translation": ""}
 
     diff_result = None
+    warnings = []
 
     if req.engine == "deepl":
         result = await translate_deepl(req.text, req.source_lang, req.target_lang)
@@ -224,10 +225,7 @@ async def translate_chunk(req: ChunkRequest):
         # ── restore after S1 — S2 gets clean text ─────────────────────────────
         result = term_engine.restore(result, tgt_lang=req.target_lang,
                                      code_map=code_map, mindset=req.mindset)
-        issues = term_engine.verify(protected_text, result, code_map)
-        if issues:
-            for issue in issues:
-                print(f"  [TermEngine] {issue}")
+        result, term_warnings = term_engine.strip_unresolved(result, code_map)
 
         # ── S2 edits the restored EN text — skipped in Coherence Mode ──────────
         if req.s2_model and not coherence_mode:
@@ -237,10 +235,15 @@ async def translate_chunk(req: ChunkRequest):
 
         # ── link_guard restore — after S1+S2, right at the end ─────────────────
         result = link_guard.restore(result, link_result.mapping)
-        link_issues = link_guard.verify(result, link_result.mapping)
-        if link_issues:
-            for issue in link_issues:
-                print(f"  [LinkGuard] {issue}")
+        result, link_warnings = link_guard.strip_unresolved(result, link_result.mapping)
+
+        # ── Surface any stripped placeholder debris — identical text server-
+        #    side (console log) and client-side (response.warnings), so the
+        #    two can be matched up; chunk_index locates it within the run ────
+        warnings = [f"[TermEngine] chunk {req.chunk_index}: {w}" for w in term_warnings] + \
+                   [f"[LinkGuard] chunk {req.chunk_index}: {w}" for w in link_warnings]
+        for w in warnings:
+            print(f"  {w}")
 
         # ── Diff against the original — Coherence Mode only, serves as a review
         #    aid and a visible warning threshold (similarity) instead of a silent
@@ -253,6 +256,8 @@ async def translate_chunk(req: ChunkRequest):
                              terms_protected=len(code_map))
 
     response = {"translation": result}
+    if warnings:
+        response["warnings"] = warnings
     if diff_result is not None:
         response["diff"] = diff_result["segments"]
         response["similarity"] = diff_result["similarity"]
@@ -267,6 +272,7 @@ async def translate(req: TranslateRequest):
         return {"translation": ""}
 
     diff_result = None
+    warnings = []
 
     if req.engine == "deepl":
         result = await translate_deepl(req.text, req.source_lang, req.target_lang)
@@ -296,16 +302,19 @@ async def translate(req: TranslateRequest):
         time_s2 = 0.0
         result = term_engine.restore(result, tgt_lang=req.target_lang,
                                      code_map=code_map, mindset="general")
+        result, term_warnings = term_engine.strip_unresolved(result, code_map)
         if req.s2_model and not coherence_mode:
             t1      = time.monotonic()
             result  = await run_s2(result, req.s2_model, mindset="general")
             time_s2 = time.monotonic() - t1
 
         result = link_guard.restore(result, link_result.mapping)
-        link_issues = link_guard.verify(result, link_result.mapping)
-        if link_issues:
-            for issue in link_issues:
-                print(f"  [LinkGuard] {issue}")
+        result, link_warnings = link_guard.strip_unresolved(result, link_result.mapping)
+
+        warnings = [f"[TermEngine] {w}" for w in term_warnings] + \
+                   [f"[LinkGuard] {w}" for w in link_warnings]
+        for w in warnings:
+            print(f"  {w}")
 
         if coherence_mode:
             diff_result = compute_diff(req.text, result)
@@ -315,6 +324,8 @@ async def translate(req: TranslateRequest):
                              terms_protected=len(code_map))
 
     response = {"translation": result}
+    if warnings:
+        response["warnings"] = warnings
     if diff_result is not None:
         response["diff"] = diff_result["segments"]
         response["similarity"] = diff_result["similarity"]

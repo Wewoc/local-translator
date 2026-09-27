@@ -57,10 +57,19 @@ async def translate_ollama(
         f"For continuity, the previous passage ended with:\n{context}\n\n"
         if context else ""
     )
+    placeholder_hint = (
+        "The text may contain opaque placeholder tokens of the form "
+        "§Lxxxxxxxx§ or §Txxxxxxxx§ (letters/digits between § marks). These "
+        "are not legal section marks — copy them character-for-character "
+        "exactly as given, including the § marks on both sides. Never "
+        "translate, alter, split, merge, drop, or reformat them (e.g. do "
+        "not turn §T1a2b3c4d§ into \"Section [T1a2b3c4d]\" or similar).\n"
+    )
     prompt = (
         f"{anchor}\n\n"
         f"{mam}\n"
         f"{veto_hint}"
+        f"{placeholder_hint}"
         f"{context_hint}"
         f"Translate the following text from {src} to {tgt}.\n\n"
         f"{text}\n\n"
