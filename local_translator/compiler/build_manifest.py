@@ -9,12 +9,13 @@ APP_NAME = "LocalTranslate"
 
 ENTRY_POINT = "app.py"
 
-# Optional second EXE (--with-tester) — the batch quality-test runner
-# (test/test_gui.py + test/runner_core.py). --onefile, not --onedir: it
-# must land directly at dist/<APP_NAME>/test/, with no PyInstaller-created
-# subfolder in between, so its own frozen-path logic (test_gui.py's _HERE)
-# finds source/results next to itself and logs/ one level up, exactly
-# mirroring this file's location inside a checkout.
+# Second EXE, built by default alongside the app (opt out via --no-tester)
+# — the batch quality-test runner (test/test_gui.py + test/runner_core.py).
+# --onefile, not --onedir: it must land directly at dist/<APP_NAME>/test/,
+# with no PyInstaller-created subfolder in between, so its own frozen-path
+# logic (test_gui.py's _HERE) finds source/results next to itself and
+# logs/ one level up, exactly mirroring this file's location inside a
+# checkout.
 TESTER_NAME = "LocalTranslate-Tester"
 TESTER_ENTRY_POINT = "test/test_gui.py"
 

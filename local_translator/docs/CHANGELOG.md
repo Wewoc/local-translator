@@ -27,12 +27,15 @@
   lists and defaults the mindset-detect model from `/config`. Run via
   `test/test_gui.py` or `test_gui.bat`. UI kept English throughout (was a
   German/English mishmash in earlier iterations).
-- `compiler/build.py` — new `--with-tester` flag (checkbox in
-  `build_gui.py`) additionally builds `test/test_gui.py` as a standalone
-  `dist/LocalTranslate/test/LocalTranslate-Tester.exe`, `--onefile` rather
-  than the app's `--onedir` (see "Fixed" below and `compiler/README.md`).
-  Reuses the app's build venv — the tester has no dependencies beyond
-  stdlib + Tkinter.
+- `compiler/build.py` builds `test/test_gui.py` as a standalone
+  `dist/LocalTranslate/test/LocalTranslate-Tester.exe` alongside the app by
+  default (opt out via `--no-tester`, unchecked via `build_gui.py`'s
+  matching checkbox), `--onefile` rather than the app's `--onedir` (see
+  "Fixed" below and `compiler/README.md`). Lands in the release ZIP
+  automatically, since it's built before the ZIP step. Reuses the app's
+  build venv — the tester has no dependencies beyond stdlib + Tkinter.
+  First shipped as an opt-in `--with-tester` flag — flipped to on-by-default
+  after it twice went unnoticed and silently produced a tester-less build.
 
 ### Fixed
 - `core/config.py`/`app.py`: path resolution (`PROJECT_ROOT`, `INDEX_PATH`,

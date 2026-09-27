@@ -38,7 +38,11 @@ Run from local_translator/:
     python compiler/build.py --term-engine-dir /path/to/terminology
     python compiler/build.py --only-term-engine --term-engine-dir /path/to/terminology --out /path/to/terminology.data
     python compiler/build.py --no-zip
-    python compiler/build.py --with-tester
+    python compiler/build.py --no-tester
+
+The batch-tester (test/test_gui.py) is built by default alongside the app
+(dist/<app>/test/LocalTranslate-Tester.exe, included in the release ZIP) —
+pass --no-tester to skip it.
 """
 
 import argparse
@@ -211,17 +215,16 @@ def main():
     parser.add_argument("--out", default=None,
                          help="Output path for --only-term-engine mode.")
     parser.add_argument("--no-zip", action="store_true", help="Skip creating the release ZIP.")
-    parser.add_argument("--with-tester", action="store_true",
-                         help="Also build test/test_gui.py (the batch quality-test runner) as "
-                              "dist/<app>/test/LocalTranslate-Tester.exe.")
+    parser.add_argument("--no-tester", action="store_true",
+                         help="Skip building test/test_gui.py (the batch quality-test runner). "
+                              "Built by default as dist/<app>/test/LocalTranslate-Tester.exe, "
+                              "included in the release ZIP alongside the app.")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent  # compiler/ -> local_translator/
     check_source(root)
 
     if args.only_term_engine:
-        if args.with_tester:
-            parser.error("--with-tester has no effect with --only-term-engine (no app build happens)")
         if not args.term_engine_dir or not args.out:
             parser.error("--only-term-engine requires both --term-engine-dir and --out")
         term_engine_dir = Path(args.term_engine_dir).resolve()
@@ -243,8 +246,10 @@ def main():
     build_exe(root, venv_python, dist_dir)
     copy_external_defaults(root, dist_dir)
 
-    if args.with_tester:
+    if not args.no_tester:
         build_tester_exe(root, venv_python, dist_dir)
+    else:
+        print("\nBatch-tester not included (--no-tester given).")
 
     if args.term_engine_dir:
         include_term_engine(Path(args.term_engine_dir).resolve(), dist_dir)

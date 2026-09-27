@@ -28,23 +28,25 @@ so lässt sich unterscheiden, welchen Stand ein Freund gerade tatsächlich nutzt
 ## Drei Modi
 
 ```
-python compiler/build.py                                    # nur App
-python compiler/build.py --term-engine-dir <pfad>            # App + Terminologie
+python compiler/build.py                                    # App + Batch-Tester
+python compiler/build.py --term-engine-dir <pfad>            # App + Terminologie + Batch-Tester
 python compiler/build.py --only-term-engine --term-engine-dir <pfad> --out <pfad>
                                                                # nur Terminologie packen
-python compiler/build.py --with-tester                       # + Batch-Tester-EXE (zu jedem der obigen Modi 1/2 kombinierbar)
+python compiler/build.py --no-tester                         # App ohne Batch-Tester
 ```
 
 Oder grafisch: `python compiler/build_gui.py` — drei Radio-Buttons statt der drei
-Flags oben, plus eine Checkbox "Batch-Tester mitbauen".
+Flags oben, plus eine standardmäßig angehakte Checkbox "Batch-Tester mitbauen"
+(zum Abwählen, falls mal nicht gewünscht).
 
-## Batch-Tester mitbauen (`--with-tester`)
+## Batch-Tester (standardmäßig mit dabei, `--no-tester` zum Abwählen)
 
-Baut zusätzlich `test/test_gui.py` (den Batch-Qualitätstest-Runner, siehe
-dessen eigenen Docstring) als eigenständige EXE:
+Modi 1 und 2 bauen zusätzlich `test/test_gui.py` (den Batch-Qualitätstest-Runner,
+siehe dessen eigenen Docstring) als eigenständige EXE mit:
 `dist/LocalTranslate/test/LocalTranslate-Tester.exe`. Läuft unabhängig von
 der Haupt-App, braucht aber einen laufenden LocalTranslate-Server (egal ob
 aus dem Quellcode oder der gebauten EXE) unter `http://127.0.0.1:8000`.
+Landet automatisch mit im Release-ZIP, weil er vor dem Zip-Schritt gebaut wird.
 
 Anders als die App wird der Tester als `--onefile` statt `--onedir` gebaut
 — kein `_internal`-Unterordner, der die relative Pfadauflösung von
@@ -78,7 +80,7 @@ einmalig beim Bauen; jeder Start danach ist so schnell wie ein normales Skript.
 | Eingebettet (`--add-data`) | `index.html`, `static/`, `pipeline/mindsets.json` | Read-only, gehört fest zur App |
 | Extern, neben der EXE (`dist/LocalTranslate/`) | `config.yaml` | Editierbar — Ollama-Modell, Sprachen etc. |
 | Extern, neben der EXE, optional | `terminology.data` | Von `--term-engine-dir` gepackt, unabhängig von der App aktualisierbar |
-| Extern, `test/`-Unterordner, optional | `LocalTranslate-Tester.exe` | Von `--with-tester` gebaut, unabhängig von der App startbar |
+| Extern, `test/`-Unterordner | `LocalTranslate-Tester.exe` | Standardmäßig mitgebaut (`--no-tester` zum Abwählen), unabhängig von der App startbar |
 | Nie mitgeliefert | `.env` | Persönliche API-Keys (DeepL/Lara) — wird nie kopiert oder gezippt |
 
 `dist/LocalTranslate/` selbst ist reiner Build-Output, keine dauerhafte Installation —

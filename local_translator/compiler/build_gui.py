@@ -59,8 +59,8 @@ def build_command(build_script: Path, mode: str, term_path: str, out_path: str,
     if mode in ("app", "app_term") and not make_zip:
         cmd.append("--no-zip")
 
-    if mode in ("app", "app_term") and with_tester:
-        cmd.append("--with-tester")
+    if mode in ("app", "app_term") and not with_tester:
+        cmd.append("--no-tester")
 
     return cmd
 
@@ -122,7 +122,7 @@ def run_gui() -> None:
     zip_check = ttk.Checkbutton(opts, text="Release-ZIP erstellen", variable=zip_var)
     zip_check.grid(row=7, column=0, sticky="w", pady=(10, 0), columnspan=3)
 
-    tester_var = tk.BooleanVar(value=False)
+    tester_var = tk.BooleanVar(value=True)
     tester_check = ttk.Checkbutton(
         opts, text="Batch-Tester mitbauen (test/LocalTranslate-Tester.exe)", variable=tester_var)
     tester_check.grid(row=8, column=0, sticky="w", pady=(4, 0), columnspan=3)
