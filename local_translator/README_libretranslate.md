@@ -7,6 +7,12 @@ This guide covers setup for use with LocalTranslate.
 
 ---
 
+> **⚠️ Use at your own risk.** Follow these steps at your own discretion — no guarantee this setup
+> works on your machine or stays correct as LibreTranslate/Docker change. Provided as-is, with no
+> warranty of any kind — see [LICENSE](../LICENSE).
+
+---
+
 ## Requirements
 
 - **Windows (recommended):** Docker Desktop

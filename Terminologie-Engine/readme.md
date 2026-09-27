@@ -7,6 +7,12 @@ The compiled output (`local_translator/terminology/`) is committed.
 
 ---
 
+> **⚠️ Use at your own risk.** No guarantee of correctness or completeness of the generated term
+> lists — always spot-check before relying on them. Provided as-is, with no warranty of any kind —
+> see [LICENSE](../LICENSE).
+
+---
+
 ## What it does
 
 Domain-specific terms are protected before translation and restored afterwards.
