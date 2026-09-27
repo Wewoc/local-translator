@@ -48,6 +48,14 @@ der Haupt-App, braucht aber einen laufenden LocalTranslate-Server (egal ob
 aus dem Quellcode oder der gebauten EXE) unter `http://127.0.0.1:8000`.
 Landet automatisch mit im Release-ZIP, weil er vor dem Zip-Schritt gebaut wird.
 
+**Wichtig beim ersten Start:** `test/source/` (und `test/results/`) neben der
+Tester-exe existieren nicht von Anfang an — `test_gui.py` legt sie erst an,
+*nachdem* der Server-Check erfolgreich war (`_reload_everything()` bricht
+vorher ab, siehe die `[ERROR] Server not reachable ...`-Meldung in der
+Konsole). Reihenfolge: zuerst `LocalTranslate.exe` (die Haupt-App) starten,
+dann in der Tester-GUI auf "Reload from server" klicken — erst dann taucht
+`source/` neben `LocalTranslate-Tester.exe` auf.
+
 Anders als die App wird der Tester als `--onefile` statt `--onedir` gebaut
 — kein `_internal`-Unterordner, der die relative Pfadauflösung von
 `test_gui.py` (Quelltexte/Ergebnisse neben sich selbst, `logs/` eine Ebene
