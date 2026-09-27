@@ -66,6 +66,8 @@ async function translate(engine = 'ollama') {
   abortController  = new AbortController();
   const results    = [];
   let minSimilarity = null;
+  let warnThreshold = COHERENCE_WARNING_THRESHOLD;
+  const coherenceLevel = parseInt(document.getElementById('coherenceLevelSelect')?.value || '2', 10);
   const out        = document.getElementById('tgtOutput');
   out.textContent  = 'Translating …';
   out.className    = 'output-area loading';
@@ -129,6 +131,7 @@ async function translate(engine = 'ollama') {
             mindset:     document.getElementById('mindsetSelect').value,
             s2_model:    s2sel,
             chunk_index: i,
+            coherence_level: coherenceLevel,
           })
         });
         const data = await res.json();
@@ -143,6 +146,7 @@ async function translate(engine = 'ollama') {
         if (cell) {
           if (data.diff) {
             cell.innerHTML = renderDiffHTML(data.diff);
+            if (typeof data.coherence_threshold === 'number') warnThreshold = data.coherence_threshold;
             if (typeof data.similarity === 'number') {
               minSimilarity = minSimilarity === null
                 ? data.similarity
@@ -165,7 +169,8 @@ async function translate(engine = 'ollama') {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, source_lang: src, target_lang: tgt, engine,
-                             s2_model: document.getElementById('s2ModelSelect').value })
+                             s2_model: document.getElementById('s2ModelSelect').value,
+                             coherence_level: coherenceLevel })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Error');
@@ -176,6 +181,7 @@ async function translate(engine = 'ollama') {
       if (data.diff) {
         out.innerHTML = renderDiffHTML(data.diff);
         out.className = 'output-area';
+        if (typeof data.coherence_threshold === 'number') warnThreshold = data.coherence_threshold;
         if (typeof data.similarity === 'number') minSimilarity = data.similarity;
       } else {
         out.textContent = currentTranslation;
@@ -183,7 +189,7 @@ async function translate(engine = 'ollama') {
       }
     }
 
-    if (warnEl && coherenceMode && minSimilarity !== null && minSimilarity < COHERENCE_WARNING_THRESHOLD) {
+    if (warnEl && coherenceMode && minSimilarity !== null && minSimilarity < warnThreshold) {
       warnEl.textContent =
         `⚠ Noticeably large deviation from the original detected (similarity ${(minSimilarity * 100).toFixed(0)}%) — please review carefully.`;
       warnEl.style.display = '';

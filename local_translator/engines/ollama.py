@@ -86,23 +86,97 @@ async def translate_ollama(
 
 # ── Coherence Pass — Prompt B (source_lang == target_lang) ───────────────────
 
-async def run_coherence_pass(text: str, lang: str) -> str:
-    """Monolingual editing pass: smooths transitions between sentences/paragraphs.
+DEFAULT_COHERENCE_LEVEL = 2
+
+# Eingriffstiefe-Regler: each level tightens/loosens how far the editor may
+# depart from the input. "scope" is the only part of the prompt that varies
+# per level — the base rules (never touch placeholders, never add/remove
+# ideas, never touch Markdown/code) stay the same at every level. Values are
+# initial estimates (see konzept_kohaerenz_pass.md) — not yet tuned against
+# real test texts.
+COHERENCE_LEVELS = {
+    1: {
+        "label": "Soft",
+        "temperature": 0.15,
+        "threshold": 0.75,
+        "scope": (
+            "Your task is strictly limited to: fixing connectors and transition "
+            "words between sentences where the logical flow is unclear. Do not "
+            "restructure sentences. Do not reorder anything."
+        ),
+    },
+    2: {
+        "label": "Standard",
+        "temperature": 0.3,
+        "threshold": 0.60,
+        "scope": (
+            "Your task is strictly limited to: smoothing abrupt transitions "
+            "between sentences and paragraphs, fixing connectors where the "
+            "logical flow is unclear. Do not restructure sentences beyond what "
+            "is necessary for a smooth transition."
+        ),
+    },
+    3: {
+        "label": "Strong",
+        "temperature": 0.45,
+        "threshold": 0.45,
+        "scope": (
+            "Your task is strictly limited to: smoothing transitions between "
+            "sentences and paragraphs, fixing connectors where the logical flow "
+            "is unclear, and reordering sentences within a paragraph where it "
+            "improves the flow."
+        ),
+    },
+    4: {
+        "label": "Rewrite Light",
+        "temperature": 0.55,
+        "threshold": 0.30,
+        "scope": (
+            "You may rephrase entire sentences and change word choice freely "
+            "where it improves coherence, as long as every idea and fact from "
+            "the input is preserved."
+        ),
+    },
+    5: {
+        "label": "Rewrite Medium",
+        "temperature": 0.65,
+        "threshold": 0.20,
+        "scope": (
+            "You may rephrase sentences freely, reorder content within a "
+            "paragraph, and shorten redundant passages, as long as every idea "
+            "and fact from the input is preserved."
+        ),
+    },
+    6: {
+        "label": "Rewrite Heavy",
+        "temperature": 0.75,
+        "threshold": 0.20,
+        "scope": (
+            "You may freely restructure and rewrite across paragraphs, using "
+            "the input as source material rather than a fixed skeleton. Every "
+            "idea and fact from the input must still appear in the output, and "
+            "no new information may be added."
+        ),
+    },
+}
+
+async def run_coherence_pass(text: str, lang: str, level: int = DEFAULT_COHERENCE_LEVEL) -> str:
+    """Monolingual editing pass: smooths transitions between sentences/paragraphs,
+    or rewrites more freely at higher levels (see COHERENCE_LEVELS).
     Runs over state.active_model (S1 model selection) — no translation,
     no S2. Language-agnostic — the language name is inserted at runtime
     via lang_name(), no hardcoding to German."""
     lang_display = lang_name(lang)
+    level_cfg = COHERENCE_LEVELS.get(level, COHERENCE_LEVELS[DEFAULT_COHERENCE_LEVEL])
 
     prompt = (
         f"You are an editor reviewing your own {lang_display} text for coherence "
-        "between sentences and paragraphs. Your task is strictly limited to: "
-        "smoothing abrupt transitions between sentences and paragraphs, fixing "
-        "connectors where the logical flow is unclear. Do not change meaning, tone, "
-        "or register. Do not restructure sentences beyond what is necessary for a "
-        "smooth transition. Do not add new information or remove existing content "
-        "— every idea in the input must remain in the output. Do not expand "
-        "abbreviations. Do not alter Markdown formatting, code blocks, or structural "
-        "elements. If a passage already reads smoothly, leave it exactly as is. "
+        f"between sentences and paragraphs. {level_cfg['scope']} "
+        "Do not change meaning, tone, or register. Do not add new information "
+        "or remove existing content — every idea in the input must remain in "
+        "the output. Do not expand abbreviations. Do not alter Markdown "
+        "formatting, code blocks, or structural elements. If a passage already "
+        "reads smoothly, leave it exactly as is. "
         "The text may contain opaque placeholder tokens of the form §Lxxxxxxxx§ or "
         "§Txxxxxxxx§ (letters/digits between § marks) — copy these character-for-"
         "character exactly as given. Never alter, split, merge, shorten, or "
@@ -110,7 +184,12 @@ async def run_coherence_pass(text: str, lang: str) -> str:
         "Output only the corrected text. No explanations. No comments.\n\n"
         f"{text}"
     )
-    payload = {"model": state.active_model, "prompt": prompt, "stream": False}
+    payload = {
+        "model": state.active_model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": level_cfg["temperature"]},
+    }
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=180.0)) as client:
         try:
