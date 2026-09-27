@@ -10,6 +10,15 @@ Structure:
 
 New target language: drop a new fr.json into the mindset folder — done.
 
+Portable alternative: a single terminology.pack.gz next to this file (or,
+when frozen, next to the EXE) is tried first and takes priority over the
+loose per-file tree above — see _find_pack_path(). Built by
+Terminologie-Engine/pack_terminology.py, which packs that same
+per-mindset/per-lang JSON tree into one file so it can be handed to
+someone else, or dropped next to a built EXE, without touching the
+folder structure at all. No pack file present: falls back to the loose
+tree exactly as before.
+
 API:
   engine = TermEngine()
   ok = engine.check(src_lang="DE", tgt_lang="EN", mindset="technical")
@@ -19,15 +28,33 @@ API:
   info   = engine.status(src_lang, tgt_lang, mindset)
 """
 
+import gzip
 import json
 import re
+import sys
 from pathlib import Path
 
 _TERMINOLOGY_DIR = Path(__file__).resolve().parent
+_PACK_FILENAME   = "terminology.pack.gz"
 _CODE_PATTERN    = re.compile(r"§T[0-9a-f]{8}§")
 
 ALL_MINDSETS = ["general", "technical", "legal", "medical",
                 "editorial", "academic", "marketing", "political"]
+
+
+def _find_pack_path() -> Path | None:
+    """
+    Looks for a packed terminology.pack.gz — next to the EXE when frozen,
+    otherwise next to this file. Checked once; None if neither exists.
+    """
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / _PACK_FILENAME)
+    candidates.append(_TERMINOLOGY_DIR / _PACK_FILENAME)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 class TermEngine:
@@ -39,15 +66,43 @@ class TermEngine:
             cls._instance = super().__new__(cls)
             # Cache: (mindset, lang) -> {code: term}
             cls._instance._cache: dict[tuple, dict] = {}
+            # Pack file, loaded once on first _load() call — None means
+            # "checked, none found", not "not checked yet" (see _load()).
+            cls._instance._pack = None
+            cls._instance._pack_checked = False
         return cls._instance
 
     # ── Loading ───────────────────────────────────────────────────────────────
 
+    def _load_pack(self) -> dict | None:
+        """Loads terminology.pack.gz once. Returns {mindset: {lang: {code: term}}},
+        or None if no pack file is present or it fails to load."""
+        pack_path = _find_pack_path()
+        if pack_path is None:
+            return None
+        try:
+            with gzip.open(pack_path, "rt", encoding="utf-8") as f:
+                payload = json.load(f)
+            return payload.get("mindsets", {})
+        except Exception as e:
+            print(f"  [TermEngine] Pack load error {pack_path}: {e}")
+            return None
+
     def _load(self, mindset: str, lang: str) -> dict:
-        """Loads mindset/lang.json — only once, then cached. Returns an empty dict on error."""
+        """Loads mindset/lang — only once, then cached. Returns an empty dict on error.
+        Prefers terminology.pack.gz if present, else the loose per-file tree."""
         key = (mindset, lang)
         if key in self._cache:
             return self._cache[key]
+
+        if not self._pack_checked:
+            self._pack = self._load_pack()
+            self._pack_checked = True
+
+        if self._pack is not None:
+            data = self._pack.get(mindset, {}).get(lang, {})
+            self._cache[key] = data
+            return data
 
         json_path = _TERMINOLOGY_DIR / mindset / f"{lang}.json"
         try:
