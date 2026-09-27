@@ -183,6 +183,29 @@ were dropped. After applying, re-run Pass 3 on the now-smaller list to validate 
 
 ---
 
+## Step 3 — Pack (optional)
+
+Once Steps 1–2 are done, `local_translator/terminology/` holds a folder tree —
+8 mindsets times N languages, each its own JSON file. To hand that data to someone else,
+or to bundle it with a `local_translator/compiler/build.py` build, pack it into a single
+portable file instead:
+
+```powershell
+python pack_terminology.py --dir "..\local_translator\terminology"
+```
+
+Writes `terminology.data` (gzip-compressed JSON, named `.data` rather than `.gz` on
+purpose — a `.gz` extension had Windows Explorer navigate INTO the file via an installed
+archive tool instead of treating it as one file, misleadingly showing "0 KB") into that
+same folder by default, or wherever `--out` points. `local_translator/terminology/
+terminology.py` loads this file in preference to the loose tree if it finds one next to
+itself (or next to a built EXE) — drop the one file, no folder structure to recreate.
+`custom_de.json`/`custom_en.json` are never packed (see `local_translator/docs/CHANGELOG.md`
+— that override support was reverted
+and terminology.py doesn't read them either currently).
+
+---
+
 ## Mindsets
 
 | Mindset | Domain coverage |

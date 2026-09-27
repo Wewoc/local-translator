@@ -21,7 +21,6 @@ Imported from this project:
 import os
 import webbrowser
 from datetime import datetime
-from pathlib import Path
 from threading import Thread
 
 import httpx
@@ -59,6 +58,7 @@ from core.config import (
     INDEX_PATH,
     MYMEMORY_CHUNK_SIZE,
     PORT,
+    STATIC_DIR,
     state,
 )
 from core.chunking import lang_name, split_chunks
@@ -67,6 +67,7 @@ from core import link_guard
 from core.diff_utils import compute_diff
 from terminology.terminology import term_engine
 from theme import _THEMES as THEMES
+from version import APP_VERSION
 from engines.ollama import (
     COHERENCE_LEVELS,
     DEFAULT_COHERENCE_LEVEL,
@@ -85,11 +86,11 @@ from engines.external import (
 
 # ── FastAPI Setup ──────────────────────────────────────────────────────────────
 
-app = FastAPI(title="LocalTranslate")
+app = FastAPI(title="LocalTranslate", version=APP_VERSION)
 
 app.mount(
     "/static",
-    StaticFiles(directory=Path(__file__).parent / "static"),
+    StaticFiles(directory=STATIC_DIR),
     name="static",
 )
 
@@ -140,6 +141,7 @@ class SetModelRequest(BaseModel):
 @app.get("/config")
 async def get_config():
     return {
+        "version":                 APP_VERSION,
         "languages":               LANGUAGES,
         "default_source_lang":     DEFAULT_SRC,
         "default_target_lang":     DEFAULT_TGT,

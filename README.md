@@ -53,6 +53,14 @@ currently only contains the runtime engine code (`terminology.py`). Run the buil
 in `Terminologie-Engine/` to generate them; without them, the terminology engine simply
 stays inactive and translation falls back to plain Ollama/API output.
 
+## `local_translator/compiler/` — standalone build
+
+Packages `local_translator` as a `--onedir` PyInstaller build (EXE + program folder),
+optionally including a packed terminology engine (`Terminologie-Engine/pack_terminology.py`)
+as a single portable file next to the EXE.
+
+→ [Documentation](local_translator/compiler/README.md)
+
 ---
 
 ## Origin

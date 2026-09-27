@@ -23,6 +23,8 @@ let mindsetDetected = false;
 async function init() {
   config = await fetch('/config').then(r => r.json());
 
+  document.getElementById('appVersion').textContent = config.version ? `v${config.version}` : '';
+
   // Fill language dropdowns
   ['srcLang', 'tgtLang'].forEach(id => {
     const sel = document.getElementById(id);
