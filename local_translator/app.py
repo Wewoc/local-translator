@@ -21,7 +21,6 @@ Imported from this project:
 import os
 import webbrowser
 from datetime import datetime
-from pathlib import Path
 from threading import Thread
 
 import httpx
@@ -59,6 +58,7 @@ from core.config import (
     INDEX_PATH,
     MYMEMORY_CHUNK_SIZE,
     PORT,
+    STATIC_DIR,
     state,
 )
 from core.chunking import lang_name, split_chunks
@@ -89,7 +89,7 @@ app = FastAPI(title="LocalTranslate")
 
 app.mount(
     "/static",
-    StaticFiles(directory=Path(__file__).parent / "static"),
+    StaticFiles(directory=STATIC_DIR),
     name="static",
 )
 
