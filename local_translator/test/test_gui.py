@@ -20,6 +20,7 @@ LocalTranslate server running at runner_core.SERVER_URL.
 
 import queue
 import re
+import sys
 import threading
 import time
 import tkinter as tk
@@ -30,9 +31,22 @@ from tkinter.scrolledtext import ScrolledText
 
 import runner_core as core
 
-SOURCE_DIR = Path(__file__).parent / "source"
-RESULTS_ROOT = Path(__file__).parent / "results"
-PERF_LOG = Path(__file__).parent.parent / "logs" / "perf.csv"
+# Same PROJECT_ROOT pattern as core/config.py: frozen (PyInstaller), a
+# module's __file__ resolves inside the temp/bundle extraction dir, not
+# next to the EXE — so source texts and results would silently go missing.
+# sys.executable's folder is the stable one when frozen; dev mode keeps the
+# old __file__-based behavior. compiler/build.py places the built EXE at
+# dist/<app>/test/, mirroring this file's own location in the checkout, so
+# the relative layout below (source/, results/ here, logs/ one level up)
+# holds in both cases.
+if getattr(sys, "frozen", False):
+    _HERE = Path(sys.executable).resolve().parent
+else:
+    _HERE = Path(__file__).resolve().parent
+
+SOURCE_DIR = _HERE / "source"
+RESULTS_ROOT = _HERE / "results"
+PERF_LOG = _HERE.parent / "logs" / "perf.csv"
 
 _NO_S2_LABEL = "— no S2 —"
 

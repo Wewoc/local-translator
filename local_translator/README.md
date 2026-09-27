@@ -258,9 +258,14 @@ The file is created automatically. Separator is configurable via `log_csv_separa
 
 `test/` contains two reproducible test runners for comparing model/mindset/language combinations. Both call the same `/translate/chunk` endpoint the browser UI uses, and write one result MD per run into `test/results/`, including source text, S1 output, S2 output (if configured), and the relevant `perf.csv` rows.
 
-### GUI — `test_gui.bat` / `python test_gui.py`
+### GUI — `test_gui.bat` / `python test_gui.py` (or the built `LocalTranslate-Tester.exe`, see `compiler/README.md`)
 
 Pick source texts, S1 models, mindsets (any of the configured ones, "General" as the no-domain baseline, and/or "Auto-detect" via `/mindset/detect`), and target languages by clicking — no config file to get a typo in. Builds the full cartesian product (source × model × mindset × target) and runs it in the background with a progress bar and live log; Start/Stop/Resume works the same way as `mcp-llm-tester`'s GUI (results and an incomplete run's progress land in `test/results/run_<nr>_<date>_<rest>/`, stop-then-resume skips combinations already done). Source language, an optional S2 model, the mindset-detect model, and a Coherence Level (1–6, same scale as the app's own selector) are set once per run, not per combination — Coherence Mode itself just falls out of the matrix: pick the source language as one of the target languages too, and those combinations automatically run as a monolingual proofreading pass instead of a translation (same `source_lang == target_lang` check the app itself uses), tagged `[Coherence]` in the log and `_coherence` in the result filename.
+
+Needs the LocalTranslate server running first (`translator.bat`/`.sh`, or the
+built `LocalTranslate.exe`) — `test/source/` and `test/results/` aren't
+created until the first successful "Reload from server" against it; without
+a reachable server, the source list stays empty and no folder appears.
 
 ### CLI — `test.bat` / `test.py`
 

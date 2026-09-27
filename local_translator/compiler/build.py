@@ -38,6 +38,11 @@ Run from local_translator/:
     python compiler/build.py --term-engine-dir /path/to/terminology
     python compiler/build.py --only-term-engine --term-engine-dir /path/to/terminology --out /path/to/terminology.data
     python compiler/build.py --no-zip
+    python compiler/build.py --no-tester
+
+The batch-tester (test/test_gui.py) is built by default alongside the app
+(dist/<app>/test/LocalTranslate-Tester.exe, included in the release ZIP) —
+pass --no-tester to skip it.
 """
 
 import argparse
@@ -126,6 +131,45 @@ def build_exe(root: Path, venv_python: Path, dist_dir: Path):
         raise SystemExit(1)
 
 
+def build_tester_exe(root: Path, venv_python: Path, dist_dir: Path):
+    """
+    Builds test/test_gui.py (the batch quality-test runner) as a second,
+    standalone EXE — --onefile, unlike the app's --onedir. The app's
+    --onedir choice is about avoiding a re-extract on every launch while
+    something waits on it (app.py's server-startup poll); the tester has
+    no such wait, and --onefile places the EXE directly at
+    dist/<app>/test/LocalTranslate-Tester.exe with no extra PyInstaller
+    subfolder — required so test_gui.py's own frozen-path logic (_HERE)
+    still finds source/ and results/ next to itself and logs/ one level
+    up, mirroring its location in a checkout (local_translator/test/).
+    Reuses the same build venv as the app build — the tester has no
+    dependencies beyond stdlib + Tkinter, already covered by it.
+    """
+    print("\n[extra] Building batch-tester EXE (--onefile) ...")
+    tester_dist = dist_dir / "test"
+
+    cmd = [
+        str(venv_python), "-m", "PyInstaller",
+        "--onefile",
+        "--name", manifest.TESTER_NAME,
+        "--distpath", str(tester_dist),
+        "--workpath", str(root / "build" / "tester"),
+        "--specpath", str(Path(__file__).parent),
+        str(root / manifest.TESTER_ENTRY_POINT),
+    ]
+    result = subprocess.run(cmd, cwd=str(root))
+    if result.returncode != 0:
+        print("\n  [build] PyInstaller failed while building the tester — see output above.")
+        raise SystemExit(1)
+
+    exe_name = manifest.TESTER_NAME + (".exe" if sys.platform == "win32" else "")
+    exe_path = tester_dist / exe_name
+    if not exe_path.exists():
+        print(f"  [build] PyInstaller reported success but {exe_path} doesn't exist.")
+        raise SystemExit(1)
+    print(f"  {exe_path}")
+
+
 def copy_external_defaults(root: Path, dist_dir: Path):
     print("\n[3/4] Copying editable defaults ...")
     for name in manifest.EXTERNAL_DEFAULTS:
@@ -171,6 +215,10 @@ def main():
     parser.add_argument("--out", default=None,
                          help="Output path for --only-term-engine mode.")
     parser.add_argument("--no-zip", action="store_true", help="Skip creating the release ZIP.")
+    parser.add_argument("--no-tester", action="store_true",
+                         help="Skip building test/test_gui.py (the batch quality-test runner). "
+                              "Built by default as dist/<app>/test/LocalTranslate-Tester.exe, "
+                              "included in the release ZIP alongside the app.")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent  # compiler/ -> local_translator/
@@ -197,6 +245,11 @@ def main():
     dist_dir = root / "dist" / manifest.APP_NAME
     build_exe(root, venv_python, dist_dir)
     copy_external_defaults(root, dist_dir)
+
+    if not args.no_tester:
+        build_tester_exe(root, venv_python, dist_dir)
+    else:
+        print("\nBatch-tester not included (--no-tester given).")
 
     if args.term_engine_dir:
         include_term_engine(Path(args.term_engine_dir).resolve(), dist_dir)

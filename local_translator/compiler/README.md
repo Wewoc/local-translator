@@ -28,14 +28,45 @@ so lässt sich unterscheiden, welchen Stand ein Freund gerade tatsächlich nutzt
 ## Drei Modi
 
 ```
-python compiler/build.py                                    # nur App
-python compiler/build.py --term-engine-dir <pfad>            # App + Terminologie
+python compiler/build.py                                    # App + Batch-Tester
+python compiler/build.py --term-engine-dir <pfad>            # App + Terminologie + Batch-Tester
 python compiler/build.py --only-term-engine --term-engine-dir <pfad> --out <pfad>
                                                                # nur Terminologie packen
+python compiler/build.py --no-tester                         # App ohne Batch-Tester
 ```
 
 Oder grafisch: `python compiler/build_gui.py` — drei Radio-Buttons statt der drei
-Flags oben.
+Flags oben, plus eine standardmäßig angehakte Checkbox "Batch-Tester mitbauen"
+(zum Abwählen, falls mal nicht gewünscht).
+
+## Batch-Tester (standardmäßig mit dabei, `--no-tester` zum Abwählen)
+
+Modi 1 und 2 bauen zusätzlich `test/test_gui.py` (den Batch-Qualitätstest-Runner,
+siehe dessen eigenen Docstring) als eigenständige EXE mit:
+`dist/LocalTranslate/test/LocalTranslate-Tester.exe`. Läuft unabhängig von
+der Haupt-App, braucht aber einen laufenden LocalTranslate-Server (egal ob
+aus dem Quellcode oder der gebauten EXE) unter `http://127.0.0.1:8000`.
+Landet automatisch mit im Release-ZIP, weil er vor dem Zip-Schritt gebaut wird.
+
+**Wichtig beim ersten Start:** `test/source/` (und `test/results/`) neben der
+Tester-exe existieren nicht von Anfang an — `test_gui.py` legt sie erst an,
+*nachdem* der Server-Check erfolgreich war (`_reload_everything()` bricht
+vorher ab, siehe die `[ERROR] Server not reachable ...`-Meldung in der
+Konsole). Reihenfolge: zuerst `LocalTranslate.exe` (die Haupt-App) starten,
+dann in der Tester-GUI auf "Reload from server" klicken — erst dann taucht
+`source/` neben `LocalTranslate-Tester.exe` auf.
+
+Anders als die App wird der Tester als `--onefile` statt `--onedir` gebaut
+— kein `_internal`-Unterordner, der die relative Pfadauflösung von
+`test_gui.py` (Quelltexte/Ergebnisse neben sich selbst, `logs/` eine Ebene
+höher — dieselbe Struktur wie im Repo-Checkout) durcheinanderbringen würde.
+Der einmalige Neuentpack-Overhead von `--onefile` bei jedem Start fällt hier
+nicht ins Gewicht — anders als bei der App wartet hier nichts aktiv auf
+einen Server-Start.
+
+Braucht keine eigene venv-Vorbereitung — der Tester hat keine Abhängigkeiten
+über Python-Standardbibliothek + Tkinter hinaus, beides schon in der
+Build-venv der App vorhanden.
 
 **Wichtig:** `<pfad>` bei `--term-engine-dir` ist der kompilierte `terminology/`-Ordner
 (die `mindset/sprache.json`-Dateien, gebaut von `Terminologie-Engine/build_terminology.py`
@@ -57,6 +88,7 @@ einmalig beim Bauen; jeder Start danach ist so schnell wie ein normales Skript.
 | Eingebettet (`--add-data`) | `index.html`, `static/`, `pipeline/mindsets.json` | Read-only, gehört fest zur App |
 | Extern, neben der EXE (`dist/LocalTranslate/`) | `config.yaml` | Editierbar — Ollama-Modell, Sprachen etc. |
 | Extern, neben der EXE, optional | `terminology.data` | Von `--term-engine-dir` gepackt, unabhängig von der App aktualisierbar |
+| Extern, `test/`-Unterordner | `LocalTranslate-Tester.exe` | Standardmäßig mitgebaut (`--no-tester` zum Abwählen), unabhängig von der App startbar |
 | Nie mitgeliefert | `.env` | Persönliche API-Keys (DeepL/Lara) — wird nie kopiert oder gezippt |
 
 `dist/LocalTranslate/` selbst ist reiner Build-Output, keine dauerhafte Installation —
