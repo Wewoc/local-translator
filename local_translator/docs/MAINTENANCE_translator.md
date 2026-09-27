@@ -94,9 +94,10 @@ const res = await fetch('/translate/chunk', {
 
 ## Static files path
 
-`app.py` mounts `/static` to the `static/` subfolder:
+`app.py` mounts `/static` to the `static/` subfolder, via `core.config.STATIC_DIR`
+(not a `Path(__file__)`-based path — see "Pfade — PROJECT_ROOT" below for why):
 ```python
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 ```
 
 `style.css`, `app.js`, `translate.js`, `engines.js`, `ui.js` must be in `translator/static/`.
@@ -392,11 +393,27 @@ meant to substitute for a real translation-quality benchmark.
 
 ## Pfade — PROJECT_ROOT
 
-Alle Pfade in `core/config.py` basieren auf `PROJECT_ROOT`:
+Alle Pfade in `core/config.py` basieren auf `PROJECT_ROOT` bzw. `_BUNDLE_ROOT`:
 
 ```python
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+    _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    _BUNDLE_ROOT = PROJECT_ROOT
 ```
 
-`__file__` zeigt auf `core/config.py` — `.parent.parent` navigiert zum Projektstamm.
-Nie relative Pfade wie `Path(__file__).parent / "pipeline"` in Untermodulen verwenden — das würde auf den falschen Ordner zeigen.
+Im normalen Betrieb (nicht eingefroren) navigiert `__file__` (zeigt auf `core/config.py`)
+über `.parent.parent` zum Projektstamm — unverändert wie zuvor. Läuft die App als
+PyInstaller-Build (`compiler/build.py`, siehe `compiler/README.md`), ist `__file__` für
+gefrorene Module nicht mehr aussagekräftig — deshalb die Unterscheidung:
+
+- `PROJECT_ROOT` = Ordner der EXE selbst — stabil in `--onedir`, dort liegen editierbare
+  Dateien: `config.yaml`, `lara_usage.json`, `exports/`, `logs/`.
+- `_BUNDLE_ROOT` = `sys._MEIPASS` — dort landen per `--add-data` eingebettete, read-only
+  Assets: `index.html`, `pipeline/mindsets.json`, `static/`.
+
+Nie relative Pfade wie `Path(__file__).parent / "pipeline"` in Untermodulen verwenden
+statt sie von hier zu importieren — das bricht, sobald der Build eingefroren läuft
+(`app.py`s Static-Mount hatte genau dieses Problem, siehe oben).
