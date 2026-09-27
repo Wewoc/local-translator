@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller build output (local_translator/compiler/build.py)
+local_translator/build/
+local_translator/dist/
+local_translator/.venv-build/
+local_translator/compiler/*.spec
+
+# Packed terminology data — built locally from Terminologie-Engine/
+# pack_terminology.py, never committed (see Terminologie-Engine/readme.md:
+# the compiled term lists themselves already aren't committed either).
+# Wildcard, not path-bound: pack_terminology.py's output path is always
+# given explicitly and could land anywhere, including next to
+# terminology.py for local testing.
+**/terminology.pack.gz
+
+# Local, personal — never shipped or committed
+.env
