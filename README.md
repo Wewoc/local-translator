@@ -2,7 +2,11 @@
 
 ![GLA Local Translator](img/Banner_1.jpg)
 
-Local, offline-first translation tool with a domain-specific terminology engine.
+Local, offline-first translation tool with a domain-specific terminology engine: before
+translation, domain-specific terms are swapped for stable protected tokens, the LLM
+translates around them, and the tokens are restored afterwards with the correct
+target-language term — so established terminology can't drift, get mistranslated, or
+get simplified away mid-translation.
 Split out of [GLA-NeedfulThings](https://github.com/Wewoc/GLA-NeedfulThings) so it can stand on its own.
 
 No cloud dependency for the core translation loop — Ollama runs locally.

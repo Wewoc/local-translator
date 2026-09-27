@@ -291,7 +291,7 @@ lara-sdk
 
 ---
 
-## Engine Quality — Benchmark Notes
+## Engine Quality — Testing Notes
 
 The engines in LocalTranslate are not equivalent. They differ fundamentally in how they work,
 not just in price or availability.
@@ -305,33 +305,17 @@ translation. It processes text segment by segment without holding the broader co
 well for standardised content — UI strings, forms, short technical phrases — but breaks down on
 prose with deliberate style and tone.
 
----
+In informal testing on German engineering/technical prose translated to English, Claude produced
+the most natural, publication-ready results — closely matching the original tone and structure.
+Among local Ollama models, TranslateGemma-12B and Aya Expanse came closest, followed by
+general-purpose models like Mistral and DeepSeek-R1, which stayed accurate but read more
+mechanically. Models like Llama 3.2 showed more noticeable phrasing issues. LibreTranslate
+consistently struggled with tone and structure on this kind of prose — it works fine for short,
+standardized content, but not for stylistically nuanced text.
 
-### Results — DE → EN, literary-technical prose (8 engines tested)
-
-| Rank   | Engine                          | Score        | Tone  | Formatting | Error Rate | Notes                                                             |
-| ------ | ------------------------------- | ------------ | ----- | ---------- | ---------- | ----------------------------------------------------------------- |
-| **1**  | **Claude.ai**                   | **96 / 100** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐      | ⭐          | Publication-ready. Matches original voice, structure, and rhythm. |
-| **2**  | **Ollama — TranslateGemma-12B** | **92 / 100** | ⭐⭐⭐⭐  | ⭐⭐⭐⭐⭐      | ⭐⭐         | Best local model. Slightly smoother than original, very stable.   |
-| **3**  | **Ollama — Aya Expanse**        | **89 / 100** | ⭐⭐⭐⭐  | ⭐⭐⭐⭐⭐      | ⭐⭐         | Strong narrative flow, minor interpretive drift.                  |
-| **4**  | **Ollama — Mistral (latest)**   | **85 / 100** | ⭐⭐⭐   | ⭐⭐⭐⭐       | ⭐⭐⭐        | Reliable, but stylistically flatter and more generic.             |
-| **5**  | **Ollama — DeepSeek-R1 14B**    | **83 / 100** | ⭐⭐⭐   | ⭐⭐⭐⭐       | ⭐⭐⭐        | Content accurate, rhythm slightly mechanical.                     |
-| **6**  | **Ollama — Dolphin 3**          | **82 / 100** | ⭐⭐⭐   | ⭐⭐⭐⭐       | ⭐⭐⭐        | Generally good, but inconsistent phrasing and tone.               |
-| **7**  | **Ollama — Mistral Nemo**       | **78 / 100** | ⭐⭐    | ⭐⭐⭐⭐       | ⭐⭐⭐⭐       | Grammatically solid, but stiff and less natural tone.             |
-| **8**  | **Ollama — Qwen2.5-Coder 14B**  | **77 / 100** | ⭐⭐    | ⭐⭐⭐⭐⭐      | ⭐⭐⭐        | Structurally clean, but narratively dry and technical.            |
-| **9**  | **Ollama — Llama 3.2**          | **68 / 100** | ⭐⭐    | ⭐⭐⭐        | ⭐⭐⭐⭐       | Noticeable phrasing issues and minor structural inconsistencies.  |
-| **10** | **LibreTranslate**              | **48 / 100** | ⭐     | ⭐⭐         | ⭐⭐⭐⭐⭐      | Frequent wording errors, tone lost, formatting unstable.          |
-
----
-
-### Rating Criteria (for clarity)
-
-* **Tone** → How well the model preserves the original voice (reflective, direct, non-hyped)
-* **Formatting** → Structural integrity (Markdown, emphasis, code blocks)
-* **Error Rate** → Linguistic + semantic errors (lower = better)
-
-Test text: a German engineering narrative (technical + reflective) with restrained tone, implicit meaning, and structured pacing.
-Results vary by text type — simpler, standardised content (e.g. UI text or documentation) is significantly easier for most models.
+This is a single-text, single-language-pair impression, not a rigorous benchmark — results vary
+by text type, and simpler content (documentation, UI strings) is easier for most models. Use the
+test runner in `test/` to compare models on your own texts.
 
 Local models like TranslateGemma-12B trade a small amount of linguistic precision for full control, scalability, and near-zero marginal cost — advantages that become significant at larger volumes.
 
