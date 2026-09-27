@@ -137,6 +137,16 @@
   link placeholder stripped", and a recoverable case (known id, delimiters
   swapped for brackets, e.g. `[L12345678]`) is resolved back to the real
   URL by the new `_repair()` before `strip_unresolved()` ever sees it.
+- Verified end-to-end against the real pipeline (not just unit-level): a
+  full batch re-run (`translategemma:12b`/`:4b`, all mindsets, live Ollama)
+  reproduced the original `marketing/12b` hallucination one more time and
+  confirmed the fix in place — the `## Run` table shows `Warnings | 1 —
+  see below, also logged server-side`, the new `## Warnings` section reads
+  `[LinkGuard] chunk 0: Unknown/hallucinated link placeholder stripped:
+  §L12345678§`, and the translation text itself ends cleanly with no raw
+  placeholder. All other mindsets/combos in the same run stayed clean,
+  including the legal-mindset `force majeure` case from the first fix
+  above, confirming no regression.
 
 ## 2026-08-16
 
