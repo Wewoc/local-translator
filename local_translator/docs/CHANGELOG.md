@@ -56,6 +56,42 @@
   its own directory via `sys.executable` when `sys.frozen`, `__file__`
   otherwise, same pattern as `core/config.py`'s `PROJECT_ROOT`. Needed for
   the new `--with-tester` build (see "Added").
+- Legal-mindset test run (`translategemma:12b`, DE→EN) leaked a raw,
+  half-mangled term-engine placeholder into the output: `§Ta5d01bf9§`
+  ("Höhere Gewalt") came back as `Section [Ta5d01bf9]`. Root cause:
+  `translate_ollama()`'s S1 prompt never told the model to leave
+  `§Txxxxxxxx§`/`§Lxxxxxxxx§` tokens alone (unlike `run_coherence_pass()`,
+  which already has this instruction) — the model read the `§` as a legal
+  section mark, plausible in legal source text that itself uses `§ 4 ...`,
+  and reformatted the placeholder into a citation-style `Section [...]`,
+  which `TermEngine.restore()`'s exact-match `str.replace()` then couldn't
+  catch.
+- `engines/ollama.py` → `translate_ollama()`: added the same
+  placeholder-preservation instruction `run_coherence_pass()` already
+  carries, so S1 is told up front not to touch `§...§` tokens.
+- `terminology/terminology.py` → `TermEngine._repair()`: post-processing
+  safety net broadened beyond whitespace-only damage (`§ T1a2b3c4d §`) to
+  also catch delimiters dropped or swapped for brackets/parens
+  (`[T1a2b3c4d]`, `(T1a2b3c4d)`) or dropped entirely (`T1a2b3c4d`) —
+  matches only ids actually issued for the current call (via `code_map`),
+  never arbitrary T-shaped hex strings, so it can't misfire on real prose.
+  Falls back to the source-language term if the target-language term is
+  missing, so a protected term always ends up back in the output as real
+  text instead of a dangling code. `restore()` now passes `code_map`
+  through to `_repair()` for this.
+- `TermEngine.verify()`: dropped the "Code lost" check — it compared
+  `protected` vs. `restored` and flagged every code no longer literally
+  present in `restored`, which is also true for every *successfully*
+  restored term (the code is gone because it was replaced by real text),
+  so it was reporting `[TermEngine] Code lost: ...` as a false positive on
+  every clean translation. Kept the "Code not replaced" check (canonical
+  `§Txxxxxxxx§` still present verbatim), the only signal that now remains
+  meaningful given `_repair()`'s broadened coverage above.
+- Verified: reproduced the exact `Section [Ta5d01bf9]` failure from the
+  test report, confirmed `restore()` now resolves it to the real target
+  term with correct spacing, confirmed whitespace-damaged and bare
+  (no-delimiter) variants repair cleanly too, and confirmed a normal clean
+  restore no longer trips `verify()`.
 
 ## 2026-08-16
 

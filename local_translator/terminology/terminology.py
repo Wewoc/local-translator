@@ -242,32 +242,68 @@ class TermEngine:
             if tgt_term:
                 result = result.replace(code, tgt_term)
 
-        # Repair damaged codes (whitespace, capitalization)
-        result = _repair(result, tgt_data)
+        # Repair damaged codes (whitespace, dropped/swapped delimiters, ...)
+        # so no §Txxxxxxxx§-shaped token is ever left dangling in the output.
+        result = _repair(result, tgt_data, code_map)
         return result
 
     # ── verify ────────────────────────────────────────────────────────────────
 
     def verify(self, protected: str, restored: str, code_map: dict) -> list[str]:
-        """Returns warning messages — empty if everything is ok."""
+        """Returns warning messages — empty if everything is ok.
+
+        Only checks for a canonical §Txxxxxxxx§ code still sitting unresolved
+        in `restored` — on a normal or repaired restore, the code is gone
+        because it was replaced by real text, so "code no longer present"
+        does not by itself mean the term was lost (a naive protected-vs-
+        restored diff would flag every successful restoration as a false
+        positive)."""
         issues = []
         for code in _CODE_PATTERN.findall(restored):
             if code in code_map:
                 issues.append(f"Code not replaced: {code} (src: '{code_map[code]['src']}')")
-        for code, info in code_map.items():
-            if code in protected and code not in restored:
-                issues.append(f"Code lost: {code} ('{info['src']}')")
         return issues
 
 
 # ── Helper Functions ────────────────────────────────────────────────────────────
 
-def _repair(text: str, tgt_data: dict) -> str:
-    """Repairs § T1a2b3c4d §  (whitespace) and similar LLM damage."""
-    loose = re.compile(r"§\s*T([0-9a-f]{8})\s*§", re.IGNORECASE)
+def _repair(text: str, tgt_data: dict, code_map: dict | None = None) -> str:
+    """
+    Post-processing safety net: makes sure every term the engine protected
+    actually ends up back in the output as real text, even if the LLM
+    damaged the placeholder in ways restore()'s exact-match replace() can't
+    catch. Observed damage patterns:
+
+      - whitespace inside intact delimiters:      §  T1a2b3c4d  §
+      - delimiters dropped or swapped for
+        brackets/parens (model reads "§" as a
+        legal section mark, e.g. in legal text
+        that itself uses "§ 4 ..."):              [T1a2b3c4d]  (T1a2b3c4d)
+      - delimiters dropped entirely:               T1a2b3c4d
+
+    Only repairs codes actually issued for this call (from code_map) — never
+    guesses at arbitrary T-shaped hex strings that might occur in real prose.
+    """
+    if not code_map:
+        return text
+
+    ids = {code[2:-1] for code in code_map if _CODE_PATTERN.fullmatch(code)}
+    if not ids:
+        return text
+
+    id_alt = "|".join(sorted(ids))
+    # Surrounding whitespace is only consumed together with an actual
+    # delimiter char — otherwise a bare, undelimited code (no brackets at
+    # all) would eat unrelated spacing from the words around it.
+    loose = re.compile(
+        r"(?:[§\[({<]{1,2}\s*)?T(" + id_alt + r")(?:\s*[§\])}>]{1,2})?",
+        re.IGNORECASE,
+    )
+
     def normalize(m):
         canonical = f"§T{m.group(1).lower()}§"
-        return tgt_data.get(canonical, m.group(0))
+        return tgt_data.get(canonical, code_map.get(canonical, {}).get("src", m.group(0)))
+
     return loose.sub(normalize, text)
 
 
