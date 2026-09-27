@@ -11,7 +11,7 @@ time, writing one result .md per combination.
 
 Modeled on GLA-NeedfulThings/mcp-llm-tester/mcp_test_gui.py — same
 threading model (worker thread does the actual run, GUI only polls a
-queue), same start/stop/resume semantics, same lauf_<nr>_<date>_<rest>
+queue), same start/stop/resume semantics, same run_<nr>_<date>_<rest>
 run-folder naming.
 
 Run: python test_gui.py  (or test_gui.bat on Windows). Requires the
@@ -34,7 +34,19 @@ SOURCE_DIR = Path(__file__).parent / "source"
 RESULTS_ROOT = Path(__file__).parent / "results"
 PERF_LOG = Path(__file__).parent.parent / "logs" / "perf.csv"
 
-_NO_S2_LABEL = "— kein S2 —"
+_NO_S2_LABEL = "— no S2 —"
+
+# config.yaml's language display names are German (matching the app's own
+# dropdowns) — translated here for the GUI only, so the whole test runner
+# reads as one language. Codes (what actually goes to the server) are
+# untouched; a label config.yaml adds that isn't in this dict just shows
+# up in German rather than crashing.
+LANGUAGE_DISPLAY_EN = {
+    "Deutsch": "German", "Englisch": "English", "Französisch": "French",
+    "Spanisch": "Spanish", "Italienisch": "Italian", "Portugiesisch": "Portuguese",
+    "Niederländisch": "Dutch", "Polnisch": "Polish",
+    "Russisch": "Russian", "Chinesisch": "Chinese", "Japanisch": "Japanese",
+}
 
 # Same six levels as index.html's #coherenceLevelSelect — label -> level int.
 COHERENCE_LEVELS = [
@@ -59,14 +71,14 @@ def format_elapsed(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def build_lauf_ordner_name(nr: str, datum: str, freitext: str) -> str:
+def build_run_folder_name(nr: str, datum: str, freitext: str) -> str:
     nr, datum, freitext = nr.strip(), datum.strip(), freitext.strip()
-    parts = [p for p in ["lauf", nr, datum, freitext] if p]
+    parts = [p for p in ["run", nr, datum, freitext] if p]
     return "_".join(parts)
 
 
-def parse_lauf_ordner_name(name: str) -> tuple[str, str, str] | None:
-    match = re.match(r"^lauf_(\d+)_(\d{8})_(.*)$", name)
+def parse_run_folder_name(name: str) -> tuple[str, str, str] | None:
+    match = re.match(r"^run_(\d+)_(\d{8})_(.*)$", name)
     if match is None:
         return None
     return match.groups()
@@ -98,7 +110,7 @@ class BatchTestGui:
 
         self._build_widgets()
         self._reload_everything()
-        self._suggest_lauf_felder()
+        self._suggest_run_fields()
         self._check_resumable_run()
         self._poll_queue()
 
@@ -133,7 +145,7 @@ class BatchTestGui:
         opts.pack(fill="x", padx=10, pady=5)
 
         tk.Label(opts, text="Source language:").grid(row=0, column=0, sticky="e", padx=(5, 2), pady=5)
-        self.source_lang_var = tk.StringVar(value="Deutsch")
+        self.source_lang_var = tk.StringVar(value="German")
         self.source_lang_combo = ttk.Combobox(opts, textvariable=self.source_lang_var,
                                                state="readonly", width=15)
         self.source_lang_combo.grid(row=0, column=1, sticky="w", pady=5)
@@ -174,28 +186,28 @@ class BatchTestGui:
         self.matrix_label.grid(row=2, column=0, columnspan=7, sticky="w", padx=5, pady=(0, 5))
 
         # Run folder fields
-        lauf_frame = tk.LabelFrame(self.root, text="Run folder")
-        lauf_frame.pack(fill="x", padx=10, pady=5)
+        run_frame = tk.LabelFrame(self.root, text="Run folder")
+        run_frame.pack(fill="x", padx=10, pady=5)
 
-        tk.Label(lauf_frame, text="No.:").grid(row=0, column=0, sticky="e", padx=(5, 2), pady=5)
+        tk.Label(run_frame, text="No.:").grid(row=0, column=0, sticky="e", padx=(5, 2), pady=5)
         self.nr_var = tk.StringVar()
-        self.nr_entry = tk.Entry(lauf_frame, textvariable=self.nr_var, width=6)
+        self.nr_entry = tk.Entry(run_frame, textvariable=self.nr_var, width=6)
         self.nr_entry.grid(row=0, column=1, sticky="w", pady=5)
         self.nr_var.trace_add("write", lambda *_: self._update_preview())
 
-        tk.Label(lauf_frame, text="Date:").grid(row=0, column=2, sticky="e", padx=(10, 2), pady=5)
+        tk.Label(run_frame, text="Date:").grid(row=0, column=2, sticky="e", padx=(10, 2), pady=5)
         self.datum_var = tk.StringVar()
-        self.datum_entry = tk.Entry(lauf_frame, textvariable=self.datum_var, width=10)
+        self.datum_entry = tk.Entry(run_frame, textvariable=self.datum_var, width=10)
         self.datum_entry.grid(row=0, column=3, sticky="w", pady=5)
         self.datum_var.trace_add("write", lambda *_: self._update_preview())
 
-        tk.Label(lauf_frame, text="Rest:").grid(row=0, column=4, sticky="e", padx=(10, 2), pady=5)
+        tk.Label(run_frame, text="Rest:").grid(row=0, column=4, sticky="e", padx=(10, 2), pady=5)
         self.freitext_var = tk.StringVar()
-        self.freitext_entry = tk.Entry(lauf_frame, textvariable=self.freitext_var, width=30)
+        self.freitext_entry = tk.Entry(run_frame, textvariable=self.freitext_var, width=30)
         self.freitext_entry.grid(row=0, column=5, sticky="w", padx=(0, 5), pady=5)
         self.freitext_var.trace_add("write", lambda *_: self._update_preview())
 
-        self.preview_label = tk.Label(lauf_frame, text="", font=("TkDefaultFont", 9, "italic"), fg="#555555")
+        self.preview_label = tk.Label(run_frame, text="", font=("TkDefaultFont", 9, "italic"), fg="#555555")
         self.preview_label.grid(row=1, column=0, columnspan=6, sticky="w", padx=5, pady=(0, 5))
 
         # Controls
@@ -330,7 +342,8 @@ class BatchTestGui:
         except Exception as e:
             self._append_log(f"[ERROR] Could not fetch /config: {e}")
             cfg = {}
-        languages = cfg.get("languages", {})
+        languages = {LANGUAGE_DISPLAY_EN.get(label, label): code
+                     for label, code in cfg.get("languages", {}).items()}
         self._targets_all = list(languages.items())
         self._selected_targets = [t for t in self._selected_targets if t in self._targets_all]
         self.target_listbox.delete(0, tk.END)
@@ -390,20 +403,20 @@ class BatchTestGui:
 
     # ── Run folder naming ─────────────────────────────────────────────
 
-    def _suggest_lauf_felder(self) -> None:
-        self.nr_var.set(str(core.next_lauf_nr(RESULTS_ROOT)))
+    def _suggest_run_fields(self) -> None:
+        self.nr_var.set(str(core.next_run_nr(RESULTS_ROOT)))
         self.datum_var.set(datetime.now().strftime("%Y%m%d"))
         self._update_preview()
 
     def _update_preview(self) -> None:
-        name = build_lauf_ordner_name(self.nr_var.get(), self.datum_var.get(), self.freitext_var.get())
+        name = build_run_folder_name(self.nr_var.get(), self.datum_var.get(), self.freitext_var.get())
         self.preview_label.config(text=f"Folder name: {name}")
 
     def _check_resumable_run(self) -> None:
         resumable = core.find_resumable_run(RESULTS_ROOT)
         if resumable is None:
             return
-        parsed = parse_lauf_ordner_name(resumable.name)
+        parsed = parse_run_folder_name(resumable.name)
         if parsed is not None:
             nr, datum, rest = parsed
             self.nr_var.set(nr)
@@ -466,12 +479,12 @@ class BatchTestGui:
             messagebox.showwarning("No selection", "Please select at least one target language.")
             return
 
-        ordner_name = build_lauf_ordner_name(self.nr_var.get(), self.datum_var.get(), self.freitext_var.get())
-        if not ordner_name or ordner_name == "lauf":
+        folder_name = build_run_folder_name(self.nr_var.get(), self.datum_var.get(), self.freitext_var.get())
+        if not folder_name or folder_name == "run":
             messagebox.showwarning("Folder name missing", "Please fill in the Nr./Date/Rest fields.")
             return
 
-        output_dir = RESULTS_ROOT / ordner_name
+        output_dir = RESULTS_ROOT / folder_name
         self._start_run(output_dir, resume=False)
 
     def _on_resume(self) -> None:

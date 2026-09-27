@@ -429,7 +429,7 @@ def _append_progress(progress_path: Path, combo_id: str, status: str, note: str)
 
 
 def find_resumable_run(results_root: Path) -> Path | None:
-    """Looks only at the most recently created lauf_*-folder under
+    """Looks only at the most recently created run_*-folder under
     results_root — same "resumable" definition as mcp-llm-tester's GUI:
     a progress file exists but no done marker."""
     if not results_root.exists():
@@ -440,7 +440,7 @@ def find_resumable_run(results_root: Path) -> Path | None:
         if not entry.is_dir():
             continue
         import re
-        match = re.match(r"^lauf_(\d+)_", entry.name)
+        match = re.match(r"^run_(\d+)_", entry.name)
         if match:
             nr = int(match.group(1))
             if latest_nr is None or nr > latest_nr:
@@ -455,7 +455,7 @@ def find_resumable_run(results_root: Path) -> Path | None:
     return latest_path
 
 
-def next_lauf_nr(results_root: Path) -> int:
+def next_run_nr(results_root: Path) -> int:
     if not results_root.exists():
         return 1
     import re
@@ -463,7 +463,7 @@ def next_lauf_nr(results_root: Path) -> int:
     for entry in results_root.iterdir():
         if not entry.is_dir():
             continue
-        match = re.match(r"^lauf_(\d+)_", entry.name)
+        match = re.match(r"^run_(\d+)_", entry.name)
         if match:
             highest = max(highest, int(match.group(1)))
     return highest + 1
