@@ -14,7 +14,7 @@ fast as running the script directly.
 dist/LocalTranslate/ is disposable build output, not a persistent
 install — the actual hand-off unit is the release ZIP. That's why this
 script wipes it clean before every build instead of trying to preserve
-anything inside it (e.g. an old terminology.pack.gz from a previous
+anything inside it (e.g. an old terminology.data from a previous
 --term-engine-dir run): whoever unzips the release and runs the app long
 enough to accumulate real state (edited config.yaml, exports/, logs/)
 does so from the unzipped copy, never from dist/ itself.
@@ -25,7 +25,7 @@ Three modes:
   Terminology pack only:  python build.py --only-term-engine
                                --term-engine-dir <path> --out <path>
     (skips the app build entirely — no PyInstaller, no build venv needed;
-    useful for refreshing an already-built dist/'s terminology.pack.gz,
+    useful for refreshing an already-built dist/'s terminology.data,
     or handing someone just an updated pack file, without touching the app)
 
 The --term-engine-dir path is never remembered or defaulted — the
@@ -36,7 +36,7 @@ would only ever be valid on one machine.
 Run from local_translator/:
     python compiler/build.py
     python compiler/build.py --term-engine-dir /path/to/terminology
-    python compiler/build.py --only-term-engine --term-engine-dir /path/to/terminology --out /path/to/terminology.pack.gz
+    python compiler/build.py --only-term-engine --term-engine-dir /path/to/terminology --out /path/to/terminology.data
     python compiler/build.py --no-zip
 """
 
@@ -138,7 +138,7 @@ def copy_external_defaults(root: Path, dist_dir: Path):
 
 
 def include_term_engine(term_engine_dir: Path, dist_dir: Path):
-    out_path = dist_dir / "terminology.pack.gz"
+    out_path = dist_dir / "terminology.data"
     if not term_engine_dir.is_dir():
         print(f"  [build] --term-engine-dir not found: {term_engine_dir}")
         raise SystemExit(1)

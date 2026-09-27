@@ -105,9 +105,9 @@ def run_gui() -> None:
 
     def _browse_out_path():
         chosen = filedialog.asksaveasfilename(
-            defaultextension=".gz",
-            initialfile="terminology.pack.gz",
-            filetypes=[("Terminology pack", "*.gz")])
+            defaultextension=".data",
+            initialfile="terminology.data",
+            filetypes=[("Terminology data", "*.data")])
         if chosen:
             out_path_var.set(chosen)
 

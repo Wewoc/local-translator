@@ -44,7 +44,7 @@ einmalig beim Bauen; jeder Start danach ist so schnell wie ein normales Skript.
 |---|---|---|
 | Eingebettet (`--add-data`) | `index.html`, `static/`, `pipeline/mindsets.json` | Read-only, gehört fest zur App |
 | Extern, neben der EXE (`dist/LocalTranslate/`) | `config.yaml` | Editierbar — Ollama-Modell, Sprachen etc. |
-| Extern, neben der EXE, optional | `terminology.pack.gz` | Von `--term-engine-dir` gepackt, unabhängig von der App aktualisierbar |
+| Extern, neben der EXE, optional | `terminology.data` | Von `--term-engine-dir` gepackt, unabhängig von der App aktualisierbar |
 | Nie mitgeliefert | `.env` | Persönliche API-Keys (DeepL/Lara) — wird nie kopiert oder gezippt |
 
 `dist/LocalTranslate/` selbst ist reiner Build-Output, keine dauerhafte Installation —
@@ -62,3 +62,12 @@ normal bei privater Weitergabe ohne teures Code-Signing-Zertifikat, kein Bug.
 Wer die App bekommt, braucht zusätzlich eine eigene Ollama-Installation mit dem in
 `config.yaml` hinterlegten Modell (Standard: `translategemma:12b`) — das EXE bringt
 kein Ollama mit.
+
+**Warum `terminology.data` und nicht `terminology.pack.gz`:** Auf einer echten
+Windows-Maschine hat ein installiertes Archiv-Tool die `.gz`-Endung übernommen und
+den Explorer beim Draufklicken in die Datei hineinnavigieren lassen statt sie als
+eine Datei anzuzeigen — mit einer irreführenden "0 KB"-Anzeige, obwohl der Inhalt
+vollständig da war. `.data` ist nirgends als Archiv-Endung registriert, deshalb
+zeigt der Explorer die Datei einfach mit ihrer echten Größe an. Am Dateiinhalt
+ändert das nichts — weiterhin stinknormales gzip, `gzip.open()` interessiert sich
+nicht für die Dateiendung.

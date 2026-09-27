@@ -3,15 +3,24 @@ pack_terminology.py — Packs compiled terminology lists into one portable file
 
 Reads local_translator/terminology/<mindset>/<lang>.json (as built by
 build_terminology.py + filter_terminology.py) and writes a single
-gzip-compressed JSON file, terminology.pack.gz. local_translator/terminology/
+gzip-compressed JSON file, terminology.data. local_translator/terminology/
 terminology.py loads that file in preference to the loose per-file tree if
 it finds one.
 
 Point of this tool: handing the term lists to someone else (a friend, a
 packaged build) means giving them one file instead of a folder tree with
-8 mindsets times N languages each. Drop the resulting terminology.pack.gz
+8 mindsets times N languages each. Drop the resulting terminology.data
 next to a built EXE (or next to terminology.py for local testing) — no
 other setup needed, no folder structure to recreate.
+
+Named .data, not .gz or .pack.gz, on purpose: on at least one real Windows
+machine, an installed archive tool intercepted the .gz extension and had
+Explorer navigate INTO the file instead of showing it as a single file,
+displaying a misleading "0 KB" for its (correctly non-empty) contents.
+.data isn't a registered archive extension anywhere, so nothing tries to
+browse into it — Explorer just shows it as a normal file with its real
+size. The bytes are still plain gzip; gzip.open() doesn't care about the
+extension, only the file's own magic bytes.
 
 custom_*.json overrides are intentionally NOT packed — terminology.py does
 not currently load them either (that support was reverted, see
@@ -28,7 +37,7 @@ pack unused with nothing telling you so.
 
 Usage:
   python pack_terminology.py --dir ../local_translator/terminology
-  python pack_terminology.py --dir ../local_translator/terminology --out ../local_translator/terminology.pack.gz
+  python pack_terminology.py --dir ../local_translator/terminology --out ../local_translator/terminology.data
 """
 
 import argparse
@@ -98,7 +107,7 @@ def main():
     parser.add_argument("--dir", required=True,
                          help="Path to the compiled terminology/ folder (mindset/lang.json tree)")
     parser.add_argument("--out", default=None,
-                         help="Output path (default: <dir>/terminology.pack.gz)")
+                         help="Output path (default: <dir>/terminology.data)")
     args = parser.parse_args()
 
     src_dir = Path(args.dir).resolve()
@@ -106,7 +115,7 @@ def main():
         print(f"  [pack] Not found: {src_dir}")
         raise SystemExit(1)
 
-    out_path = Path(args.out).resolve() if args.out else src_dir / "terminology.pack.gz"
+    out_path = Path(args.out).resolve() if args.out else src_dir / "terminology.data"
 
     report = pack_terminology(src_dir, out_path)
 

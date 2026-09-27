@@ -12,7 +12,7 @@ ENTRY_POINT = "app.py"
 # Read-only assets bundled into the build via PyInstaller --add-data —
 # (source, dest-inside-bundle), both relative to local_translator/.
 # terminology/ is deliberately NOT here — that's the separate, optional
-# terminology.pack.gz (see pack_terminology.py), never embedded.
+# terminology.data (see pack_terminology.py), never embedded.
 DATA_FILES = [
     ("index.html", "."),
     ("static", "static"),

@@ -194,11 +194,14 @@ portable file instead:
 python pack_terminology.py --dir "..\local_translator\terminology"
 ```
 
-Writes `terminology.pack.gz` (gzip-compressed JSON) into that same folder by default, or
-wherever `--out` points. `local_translator/terminology/terminology.py` loads this file in
-preference to the loose tree if it finds one next to itself (or next to a built EXE) —
-drop the one file, no folder structure to recreate. `custom_de.json`/`custom_en.json` are
-never packed (see `local_translator/docs/CHANGELOG.md` — that override support was reverted
+Writes `terminology.data` (gzip-compressed JSON, named `.data` rather than `.gz` on
+purpose — a `.gz` extension had Windows Explorer navigate INTO the file via an installed
+archive tool instead of treating it as one file, misleadingly showing "0 KB") into that
+same folder by default, or wherever `--out` points. `local_translator/terminology/
+terminology.py` loads this file in preference to the loose tree if it finds one next to
+itself (or next to a built EXE) — drop the one file, no folder structure to recreate.
+`custom_de.json`/`custom_en.json` are never packed (see `local_translator/docs/CHANGELOG.md`
+— that override support was reverted
 and terminology.py doesn't read them either currently).
 
 ---

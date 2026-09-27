@@ -10,7 +10,7 @@ Structure:
 
 New target language: drop a new fr.json into the mindset folder — done.
 
-Portable alternative: a single terminology.pack.gz next to this file (or,
+Portable alternative: a single terminology.data next to this file (or,
 when frozen, next to the EXE) is tried first and takes priority over the
 loose per-file tree above — see _find_pack_path(). Built by
 Terminologie-Engine/pack_terminology.py, which packs that same
@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 
 _TERMINOLOGY_DIR = Path(__file__).resolve().parent
-_PACK_FILENAME   = "terminology.pack.gz"
+_PACK_FILENAME   = "terminology.data"
 _CODE_PATTERN    = re.compile(r"§T[0-9a-f]{8}§")
 
 ALL_MINDSETS = ["general", "technical", "legal", "medical",
@@ -44,7 +44,7 @@ ALL_MINDSETS = ["general", "technical", "legal", "medical",
 
 def _find_pack_path() -> Path | None:
     """
-    Looks for a packed terminology.pack.gz — next to the EXE when frozen,
+    Looks for a packed terminology.data — next to the EXE when frozen,
     otherwise next to this file. Checked once; None if neither exists.
     """
     candidates = []
@@ -75,7 +75,7 @@ class TermEngine:
     # ── Loading ───────────────────────────────────────────────────────────────
 
     def _load_pack(self) -> dict | None:
-        """Loads terminology.pack.gz once. Returns {mindset: {lang: {code: term}}},
+        """Loads terminology.data once. Returns {mindset: {lang: {code: term}}},
         or None if no pack file is present or it fails to load."""
         pack_path = _find_pack_path()
         if pack_path is None:
@@ -90,7 +90,7 @@ class TermEngine:
 
     def _load(self, mindset: str, lang: str) -> dict:
         """Loads mindset/lang — only once, then cached. Returns an empty dict on error.
-        Prefers terminology.pack.gz if present, else the loose per-file tree."""
+        Prefers terminology.data if present, else the loose per-file tree."""
         key = (mindset, lang)
         if key in self._cache:
             return self._cache[key]
