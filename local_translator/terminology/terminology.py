@@ -264,6 +264,41 @@ class TermEngine:
                 issues.append(f"Code not replaced: {code} (src: '{code_map[code]['src']}')")
         return issues
 
+    # ── strip_unresolved ─────────────────────────────────────────────────────
+
+    def strip_unresolved(self, text: str, code_map: dict = None) -> tuple[str, list[str]]:
+        """
+        Final safety net, run after restore(): removes any canonical
+        §Txxxxxxxx§-shaped token still present — a known id restore()/
+        _repair() couldn't resolve (e.g. no target-language entry and no
+        code_map fallback), or one that was never issued for this call at
+        all (the model hallucinating a well-formed-looking code) — so a raw
+        internal placeholder never reaches the visible output.
+
+        Returns (cleaned_text, warnings). Each warning names the exact code
+        removed and, when known, the source term — the same text this gets
+        logged as server-side, so the two can be matched up.
+        """
+        code_map = code_map or {}
+        warnings: list[str] = []
+
+        def _strip(m):
+            code = m.group(0)
+            info = code_map.get(code)
+            if info:
+                warnings.append(f"Code left unresolved and stripped: {code} (src: '{info['src']}')")
+            else:
+                warnings.append(f"Unknown/hallucinated term code stripped: {code}")
+            return ""
+
+        cleaned = _CODE_PATTERN.sub(_strip, text)
+        if warnings:
+            # collapse the double space a removed code typically leaves
+            # behind between two surrounding words — never touches
+            # newlines/paragraphs
+            cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        return cleaned, warnings
+
 
 # ── Helper Functions ────────────────────────────────────────────────────────────
 

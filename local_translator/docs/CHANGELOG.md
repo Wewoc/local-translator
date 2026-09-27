@@ -92,6 +92,51 @@
   term with correct spacing, confirmed whitespace-damaged and bare
   (no-delimiter) variants repair cleanly too, and confirmed a normal clean
   restore no longer trips `verify()`.
+- A follow-up batch re-run (same test suite, both `translategemma:12b` and
+  `:4b`) confirmed the legal-mindset fix above, but surfaced a related,
+  independent failure: `.../mindset_test_marketing_..._auto-marketing.md`
+  (12b) ended with a bare `§L12345678§` — a `link_guard` placeholder with
+  an id that was never issued (`terms_protected: 0`, no URL in the source
+  text at all), i.e. the model hallucinated a well-formed-looking token
+  rather than mangling a real one. Neither `link_guard.restore()` (exact-
+  match only) nor `verify()` (report-only, no repair, deliberately, per
+  the 2026-08-15 entry above) could turn this into real content, so the
+  raw token reached the visible output.
+- `core/link_guard.py`: added `_repair()`, mirroring `TermEngine._repair()`
+  — recovers ids actually issued for the call (from `mapping`) that got
+  whitespace-damaged or had their delimiters dropped/swapped for brackets/
+  parens; wired into `restore()`. New `strip_unresolved(text, mapping)`
+  final safety net: removes any `§L...§`-shaped token still left after
+  that — known-but-unrecoverable or entirely unknown/hallucinated — so it
+  never reaches the visible output, and returns what it removed instead of
+  the token silently vanishing.
+- `terminology/terminology.py`: added the equivalent `TermEngine.
+  strip_unresolved(text, code_map)` — `_repair()` only ever touched ids
+  actually issued for the call, so a hallucinated `§Txxxxxxxx§` with an
+  unknown id would previously slip past both `_repair()` and `verify()`
+  (which only checks ids present in `code_map`) entirely unnoticed.
+- `app.py`: both `/translate` and `/translate/chunk` now call
+  `strip_unresolved()` for TermEngine and link_guard right after their
+  `restore()` calls, replacing the old report-only `verify()` calls (a
+  strict superset: same detection, plus removal). Collected warnings are
+  logged server-side (`[TermEngine] ...` / `[LinkGuard] ...`, chunk-
+  indexed on `/translate/chunk`) and now also returned to the caller as
+  `response["warnings"]` — same text in both places, so a caller and the
+  server log can be matched up directly instead of the caller having no
+  visibility into a silent strip.
+- `test/runner_core.py`: `translate_chunk()` responses' `warnings` are
+  collected across all chunks (S1 and, if run, S2) and passed into
+  `_build_result_md()`, which now renders a `## Warnings` section right
+  under the `## Run` table (plus a one-line count in the table itself)
+  when any were stripped — so a batch test report shows what happened and
+  where, instead of a silently cleaned-up translation looking identical to
+  one that never had a problem. `test/test.py` (the separate CSV-driven
+  runner) was not touched — not the runner these reports came from.
+- Verified: reproduced the exact `§L12345678§` case (no mapping entry at
+  all) — `strip_unresolved()` removes it and reports "Unknown/hallucinated
+  link placeholder stripped", and a recoverable case (known id, delimiters
+  swapped for brackets, e.g. `[L12345678]`) is resolved back to the real
+  URL by the new `_repair()` before `strip_unresolved()` ever sees it.
 
 ## 2026-08-16
 
