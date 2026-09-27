@@ -68,6 +68,8 @@ from core.diff_utils import compute_diff
 from terminology.terminology import term_engine
 from theme import _THEMES as THEMES
 from engines.ollama import (
+    COHERENCE_LEVELS,
+    DEFAULT_COHERENCE_LEVEL,
     detect_mindset,
     run_coherence_pass,
     run_s2,
@@ -103,6 +105,7 @@ class TranslateRequest(BaseModel):
     target_lang: str
     engine: str = "ollama"
     s2_model: str = ""
+    coherence_level: int = DEFAULT_COHERENCE_LEVEL
 
 class ExportRequest(BaseModel):
     source_text: str
@@ -119,6 +122,7 @@ class ChunkRequest(BaseModel):
     mindset: str = "general"
     s2_model: str = ""
     chunk_index: int = 0
+    coherence_level: int = DEFAULT_COHERENCE_LEVEL
 
 class PrepareRequest(BaseModel):
     text: str
@@ -207,7 +211,7 @@ async def translate_chunk(req: ChunkRequest):
 
         t0 = time.monotonic()
         if coherence_mode:
-            result = await run_coherence_pass(protected_text, req.source_lang)
+            result = await run_coherence_pass(protected_text, req.source_lang, req.coherence_level)
         else:
             result = await translate_ollama(
                 protected_text, req.source_lang, req.target_lang, req.context, req.mindset
@@ -250,6 +254,9 @@ async def translate_chunk(req: ChunkRequest):
     if diff_result is not None:
         response["diff"] = diff_result["segments"]
         response["similarity"] = diff_result["similarity"]
+        response["coherence_threshold"] = COHERENCE_LEVELS.get(
+            req.coherence_level, COHERENCE_LEVELS[DEFAULT_COHERENCE_LEVEL]
+        )["threshold"]
     return response
 
 @app.post("/translate")
@@ -280,7 +287,7 @@ async def translate(req: TranslateRequest):
 
         t0 = time.monotonic()
         if coherence_mode:
-            result = await run_coherence_pass(protected_text, req.source_lang)
+            result = await run_coherence_pass(protected_text, req.source_lang, req.coherence_level)
         else:
             result = await translate_ollama(protected_text, req.source_lang, req.target_lang)
         time_s1 = time.monotonic() - t0
@@ -309,6 +316,9 @@ async def translate(req: TranslateRequest):
     if diff_result is not None:
         response["diff"] = diff_result["segments"]
         response["similarity"] = diff_result["similarity"]
+        response["coherence_threshold"] = COHERENCE_LEVELS.get(
+            req.coherence_level, COHERENCE_LEVELS[DEFAULT_COHERENCE_LEVEL]
+        )["threshold"]
     return response
 
 # ── Endpoints — Ollama ────────────────────────────────────────────────────────

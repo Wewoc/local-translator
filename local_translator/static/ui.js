@@ -153,6 +153,9 @@ function updateCoherenceUI() {
   const label = document.getElementById('coherenceLabel');
   if (label) label.style.display = active ? '' : 'none';
 
+  const levelSel = document.getElementById('coherenceLevelSelect');
+  if (levelSel) levelSel.style.display = active ? '' : 'none';
+
   if (!active) {
     const warnEl = document.getElementById('coherenceWarning');
     if (warnEl) warnEl.style.display = 'none';

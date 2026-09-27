@@ -63,6 +63,14 @@ try {
       <select id="tgtLang"></select>
     </div>
     <span id="coherenceLabel" title="source = target: the Coherence Pass (monolingual editing) runs instead of a translation" style="display:none;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--accent);letter-spacing:0.05em;white-space:nowrap;">⬡ Coherence Mode</span>
+    <select id="coherenceLevelSelect" title="Intervention depth of the coherence pass" style="display:none;font-family:'JetBrains Mono',monospace;font-size:0.72rem;background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:6px;padding:2px 8px;cursor:pointer;margin-left:4px;">
+      <option value="1">1 — Soft</option>
+      <option value="2" selected>2 — Standard</option>
+      <option value="3">3 — Strong</option>
+      <option value="4">4 — Rewrite Light</option>
+      <option value="5">5 — Rewrite Medium</option>
+      <option value="6">6 — Rewrite Heavy</option>
+    </select>
 
     <div class="sep"></div>
 
