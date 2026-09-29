@@ -30,6 +30,7 @@ from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import runner_core as core
+import timing_estimates
 
 # Same PROJECT_ROOT pattern as core/config.py: frozen (PyInstaller), a
 # module's __file__ resolves inside the temp/bundle extraction dir, not
@@ -164,12 +165,13 @@ class BatchTestGui:
         self.source_lang_combo = ttk.Combobox(opts, textvariable=self.source_lang_var,
                                                state="readonly", width=15)
         self.source_lang_combo.grid(row=0, column=1, sticky="w", pady=5)
-        self.source_lang_var.trace_add("write", lambda *_: self._update_coherence_hint())
+        self.source_lang_var.trace_add("write", lambda *_: self._update_matrix_label())
 
         tk.Label(opts, text="S2 model (optional):").grid(row=0, column=2, sticky="e", padx=(15, 2), pady=5)
         self.s2_var = tk.StringVar(value=_NO_S2_LABEL)
         self.s2_combo = ttk.Combobox(opts, textvariable=self.s2_var, state="readonly", width=25)
         self.s2_combo.grid(row=0, column=3, sticky="w", pady=5)
+        self.s2_var.trace_add("write", lambda *_: self._update_matrix_label())
 
         tk.Label(opts, text="Mindset-detect model (empty = active S1 model):").grid(
             row=0, column=4, sticky="e", padx=(15, 2), pady=5)
@@ -392,12 +394,61 @@ class BatchTestGui:
     def _update_matrix_label(self) -> None:
         n = len(self._selected_sources) * len(self._selected_models) * \
             len(self._selected_mindsets) * len(self._selected_targets)
+        est = self._estimated_total_seconds()
+        est_part = (f" — est. total: ~{format_elapsed(est)}" if est is not None
+                    else " — est. total: unknown (no timing data yet)")
         self.matrix_label.config(text=f"{n} combination(s) "
                                        f"({len(self._selected_sources)} source × "
                                        f"{len(self._selected_models)} model × "
                                        f"{len(self._selected_mindsets)} mindset × "
-                                       f"{len(self._selected_targets)} target)")
+                                       f"{len(self._selected_targets)} target)"
+                                       f"{est_part}")
         self._update_coherence_hint()
+
+    def _estimated_total_seconds(self) -> float | None:
+        """Rough upfront estimate for the whole configured matrix, from
+        logs/model_timings.json (see timing_estimates.py) and each selected
+        source file's size on disk — a size-based approximation, not the
+        exact per-chunk split runner_core.py uses once a run actually
+        starts. None if nothing is selected yet or no model in the
+        selection has any historical timing data at all."""
+        if not (self._selected_sources and self._selected_models
+                and self._selected_targets and self._selected_mindsets):
+            return None
+        estimates = timing_estimates.load_estimates(PERF_LOG)
+        if not estimates:
+            return None
+
+        src_chars: dict[Path, int] = {}
+        for p in self._selected_sources:
+            try:
+                src_chars[p] = len(p.read_text(encoding="utf-8"))
+            except OSError:
+                src_chars[p] = 0
+
+        src_lang_code = self._current_source_lang_code()
+        s2_model = self._current_s2_model()
+        n_mindsets = len(self._selected_mindsets)
+
+        total = 0.0
+        have_any = False
+        for source in self._selected_sources:
+            chars = src_chars[source]
+            for model in self._selected_models:
+                s1_est = timing_estimates.estimate_seconds(estimates, model, chars)
+                for _label, code in self._selected_targets:
+                    is_coherence = src_lang_code.upper() == code.upper()
+                    combo_total = 0.0
+                    if s1_est is not None:
+                        combo_total += s1_est
+                        have_any = True
+                    if s2_model and not is_coherence:
+                        s2_est = timing_estimates.estimate_seconds(estimates, s2_model, chars)
+                        if s2_est is not None:
+                            combo_total += s2_est
+                            have_any = True
+                    total += combo_total * n_mindsets
+        return total if have_any else None
 
     def _update_coherence_hint(self) -> None:
         """Coherence level is always sent along (see the comment at the
@@ -596,9 +647,14 @@ class BatchTestGui:
         elif etype == "progress":
             pct = (event["combo_idx"] / event["combo_total"]) * 100 if event["combo_total"] else 0
             self.progress_bar["value"] = pct
+            chunk_part = ""
+            if event.get("chunk_total"):
+                chunk_part = f" | Chunk {event['chunk_idx']}/{event['chunk_total']}"
+            eta = event.get("eta_seconds")
+            eta_part = f" | ETA: ~{format_elapsed(max(eta, 0))}" if eta is not None else ""
             self._last_status_prefix = (
                 f"[{event['combo_idx']}/{event['combo_total']}] {event['source']} | "
-                f"{event['model']} | {event['target']} | {event['mindset']}"
+                f"{event['model']} | {event['target']} | {event['mindset']}{chunk_part}{eta_part}"
             )
             self.status_label.config(text=self._last_status_prefix)
         elif etype == "done":

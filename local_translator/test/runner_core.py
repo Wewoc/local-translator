@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import timing_estimates
+
 SERVER_URL = "http://127.0.0.1:8000"
 
 PROGRESS_FILENAME = "batch_progress.jsonl"
@@ -326,111 +328,164 @@ def run_batch_session(
     total = len(combos)
     log_callback(f"{total} combination(s) queued ({len(done_ids)} already done).")
 
-    for idx, combo in enumerate(combos, 1):
-        progress_callback({"combo_idx": idx, "combo_total": total, "source": combo.source.name,
-                            "model": combo.model_s1, "target": combo.target_code,
-                            "mindset": combo.mindset_label})
-
-        if stop_event is not None and stop_event.is_set():
-            log_callback("Stop requested — run paused, can be resumed.")
-            return
-
-        combo_id = combo.combo_id()
-        if combo_id in done_ids:
-            log_callback(f"[{idx}/{total}] SKIP (already done): {combo_id}")
-            continue
-
+    # Chunking only depends on the source text, not on model/target/mindset —
+    # split each unique source once up front instead of once per combo. This
+    # also gives exact chunk counts/sizes before any translation call, which
+    # is what the ETA estimate below needs.
+    chunks_by_source: dict[Path, list[str]] = {}
+    for combo in combos:
         if combo.source not in text_cache:
             text_cache[combo.source] = combo.source.read_text(encoding="utf-8")
-        source_text = text_cache[combo.source]
+        if combo.source not in chunks_by_source:
+            chunks_by_source[combo.source] = prepare_chunks(text_cache[combo.source])
 
-        resolved_mindset = combo.mindset_key
-        if combo.mindset_key == AUTO_MINDSET:
-            if combo.source not in auto_cache:
-                try:
-                    auto_cache[combo.source] = detect_mindset(source_text, mindset_model)
-                except Exception as e:
-                    log_callback(f"[{idx}/{total}] [ERROR] mindset auto-detect failed for {combo.source.name}: {e}")
-                    _append_progress(progress_path, combo_id, "error", str(e))
-                    continue
-            resolved_mindset = auto_cache[combo.source]
-
-        is_coherence = source_lang.upper() == combo.target_code.upper()
-        log_callback(
-            f"[{idx}/{total}] {combo.source.name} | S1={combo.model_s1} | "
-            f"{source_lang.upper()}→{combo.target_code.upper()}"
-            + (" [Coherence]" if is_coherence else "")
-            + f" | mindset={combo.mindset_label}"
-            + (f" ({resolved_mindset})" if combo.mindset_key == AUTO_MINDSET else "")
-        )
-
-        try:
-            set_model(combo.model_s1)
-            chunks = prepare_chunks(source_text)
-            run_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            t_start = datetime.now()
-
-            t0 = time.monotonic()
-            s1_parts = []
-            similarities = []
-            warnings = []
-            context = ""
-            for i, chunk in enumerate(chunks):
-                data = translate_chunk(chunk, source_lang, combo.target_code, resolved_mindset,
-                                        s2_model, i, context, coherence_level)
-                part = data.get("translation", "")
-                s1_parts.append(part)
-                context = part[-300:] if part else ""
-                if "similarity" in data:
-                    similarities.append(data["similarity"])
-                warnings += data.get("warnings", [])
-            time_s1 = time.monotonic() - t0
-            s1_translation = "\n\n".join(s1_parts)
-
-            # The server's coherence_mode branch (src == tgt) always skips
-            # S2 regardless of s2_model — see app.py's translate_chunk
-            # endpoint — so this call only actually runs an S2 pass outside
-            # Coherence Mode, same as the CSV-driven test.py.
-            s2_translation = ""
-            time_s2 = 0.0
-            if s2_model and s2_model != "—" and not is_coherence:
-                t1 = time.monotonic()
-                data_s2 = translate_chunk(s1_translation, combo.target_code, combo.target_code,
-                                           resolved_mindset, "", coherence_level=coherence_level)
-                time_s2 = time.monotonic() - t1
-                s2_translation = data_s2.get("translation", "")
-                warnings += data_s2.get("warnings", [])
-
-            t_end = datetime.now()
-            perf_rows = read_perf_rows(t_start, t_end, perf_log)
-
-            result_md = _build_result_md(
-                combo, source_text, resolved_mindset, s1_translation, s2_model,
-                s2_translation, perf_rows, time_s1, time_s2, run_ts, source_lang,
-                is_coherence=is_coherence, coherence_level=coherence_level, similarities=similarities,
-                warnings=warnings,
-            )
-
-            mindset_tag = resolved_mindset if combo.mindset_key != AUTO_MINDSET else f"auto-{resolved_mindset}"
-            coherence_tag = "_coherence" if is_coherence else ""
-            out_name = (
-                f"{date_str}_{safe_filename(combo.model_s1.replace(':', '-'))}_"
-                f"{safe_filename(combo.source.stem)}_{combo.target_code.lower()}{coherence_tag}_"
-                f"{safe_filename(mindset_tag)}.md"
-            )
-            (results_dir / out_name).write_text(result_md, encoding="utf-8")
-            log_callback(f"    -> {out_name} ({int(round(time_s1))}s)")
-            _append_progress(progress_path, combo_id, "done", out_name)
-
-        except Exception as e:
-            log_callback(f"[{idx}/{total}] [ERROR] {combo_id}: {e}")
-            _append_progress(progress_path, combo_id, "error", str(e))
+    # Remaining-time estimate, built from logs/model_timings.json (see
+    # timing_estimates.py). Counts down as chunks/combos finish below;
+    # None as long as no historical data covers any pending combo's model.
+    estimates = timing_estimates.load_estimates(perf_log)
+    combo_s2_estimate: dict[str, float | None] = {}
+    remaining_estimate = 0.0
+    have_estimate = False
+    for combo in combos:
+        if combo.combo_id() in done_ids:
             continue
+        chunks = chunks_by_source[combo.source]
+        for chunk in chunks:
+            est = timing_estimates.estimate_seconds(estimates, combo.model_s1, len(chunk))
+            if est is not None:
+                remaining_estimate += est
+                have_estimate = True
+        is_coherence = source_lang.upper() == combo.target_code.upper()
+        s2_est = None
+        if s2_model and s2_model != "—" and not is_coherence:
+            s2_est = timing_estimates.estimate_seconds(
+                estimates, s2_model, sum(len(c) for c in chunks))
+            if s2_est is not None:
+                remaining_estimate += s2_est
+                have_estimate = True
+        combo_s2_estimate[combo.combo_id()] = s2_est
 
-    if stop_event is None or not stop_event.is_set():
-        done_marker.write_text(datetime.now().isoformat(), encoding="utf-8")
-        log_callback(f"Done. Results in: {results_dir}")
+    try:
+        for idx, combo in enumerate(combos, 1):
+            eta = round(remaining_estimate) if have_estimate else None
+            progress_callback({"combo_idx": idx, "combo_total": total, "source": combo.source.name,
+                                "model": combo.model_s1, "target": combo.target_code,
+                                "mindset": combo.mindset_label, "eta_seconds": eta})
+
+            if stop_event is not None and stop_event.is_set():
+                log_callback("Stop requested — run paused, can be resumed.")
+                return
+
+            combo_id = combo.combo_id()
+            if combo_id in done_ids:
+                log_callback(f"[{idx}/{total}] SKIP (already done): {combo_id}")
+                continue
+
+            source_text = text_cache[combo.source]
+            chunks = chunks_by_source[combo.source]
+
+            resolved_mindset = combo.mindset_key
+            if combo.mindset_key == AUTO_MINDSET:
+                if combo.source not in auto_cache:
+                    try:
+                        auto_cache[combo.source] = detect_mindset(source_text, mindset_model)
+                    except Exception as e:
+                        log_callback(f"[{idx}/{total}] [ERROR] mindset auto-detect failed for {combo.source.name}: {e}")
+                        _append_progress(progress_path, combo_id, "error", str(e))
+                        continue
+                resolved_mindset = auto_cache[combo.source]
+
+            is_coherence = source_lang.upper() == combo.target_code.upper()
+            log_callback(
+                f"[{idx}/{total}] {combo.source.name} | S1={combo.model_s1} | "
+                f"{source_lang.upper()}→{combo.target_code.upper()}"
+                + (" [Coherence]" if is_coherence else "")
+                + f" | mindset={combo.mindset_label}"
+                + (f" ({resolved_mindset})" if combo.mindset_key == AUTO_MINDSET else "")
+            )
+
+            try:
+                set_model(combo.model_s1)
+                run_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                date_str = datetime.now().strftime("%Y-%m-%d")
+                t_start = datetime.now()
+
+                t0 = time.monotonic()
+                s1_parts = []
+                similarities = []
+                warnings = []
+                context = ""
+                for i, chunk in enumerate(chunks):
+                    eta = round(remaining_estimate) if have_estimate else None
+                    progress_callback({"combo_idx": idx, "combo_total": total, "source": combo.source.name,
+                                        "model": combo.model_s1, "target": combo.target_code,
+                                        "mindset": combo.mindset_label, "chunk_idx": i + 1,
+                                        "chunk_total": len(chunks), "eta_seconds": eta})
+                    data = translate_chunk(chunk, source_lang, combo.target_code, resolved_mindset,
+                                            s2_model, i, context, coherence_level)
+                    part = data.get("translation", "")
+                    s1_parts.append(part)
+                    context = part[-300:] if part else ""
+                    if "similarity" in data:
+                        similarities.append(data["similarity"])
+                    warnings += data.get("warnings", [])
+                    chunk_est = timing_estimates.estimate_seconds(estimates, combo.model_s1, len(chunk))
+                    if chunk_est is not None:
+                        remaining_estimate -= chunk_est
+                time_s1 = time.monotonic() - t0
+                s1_translation = "\n\n".join(s1_parts)
+
+                # The server's coherence_mode branch (src == tgt) always skips
+                # S2 regardless of s2_model — see app.py's translate_chunk
+                # endpoint — so this call only actually runs an S2 pass outside
+                # Coherence Mode, same as the CSV-driven test.py.
+                s2_translation = ""
+                time_s2 = 0.0
+                if s2_model and s2_model != "—" and not is_coherence:
+                    t1 = time.monotonic()
+                    data_s2 = translate_chunk(s1_translation, combo.target_code, combo.target_code,
+                                               resolved_mindset, "", coherence_level=coherence_level)
+                    time_s2 = time.monotonic() - t1
+                    s2_translation = data_s2.get("translation", "")
+                    warnings += data_s2.get("warnings", [])
+                    s2_est = combo_s2_estimate.get(combo_id)
+                    if s2_est is not None:
+                        remaining_estimate -= s2_est
+
+                t_end = datetime.now()
+                perf_rows = read_perf_rows(t_start, t_end, perf_log)
+
+                result_md = _build_result_md(
+                    combo, source_text, resolved_mindset, s1_translation, s2_model,
+                    s2_translation, perf_rows, time_s1, time_s2, run_ts, source_lang,
+                    is_coherence=is_coherence, coherence_level=coherence_level, similarities=similarities,
+                    warnings=warnings,
+                )
+
+                mindset_tag = resolved_mindset if combo.mindset_key != AUTO_MINDSET else f"auto-{resolved_mindset}"
+                coherence_tag = "_coherence" if is_coherence else ""
+                out_name = (
+                    f"{date_str}_{safe_filename(combo.model_s1.replace(':', '-'))}_"
+                    f"{safe_filename(combo.source.stem)}_{combo.target_code.lower()}{coherence_tag}_"
+                    f"{safe_filename(mindset_tag)}.md"
+                )
+                (results_dir / out_name).write_text(result_md, encoding="utf-8")
+                log_callback(f"    -> {out_name} ({int(round(time_s1))}s)")
+                _append_progress(progress_path, combo_id, "done", out_name)
+
+            except Exception as e:
+                log_callback(f"[{idx}/{total}] [ERROR] {combo_id}: {e}")
+                _append_progress(progress_path, combo_id, "error", str(e))
+                continue
+
+        if stop_event is None or not stop_event.is_set():
+            done_marker.write_text(datetime.now().isoformat(), encoding="utf-8")
+            log_callback(f"Done. Results in: {results_dir}")
+    finally:
+        # Folds this run's freshly logged perf.csv rows into the persisted
+        # timing estimates for next time — even on an early stop, whatever
+        # ran still adds usable samples.
+        timing_estimates.recompute_estimates(perf_log)
 
 
 def _append_progress(progress_path: Path, combo_id: str, status: str, note: str) -> None:
