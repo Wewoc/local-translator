@@ -50,7 +50,8 @@ languages:
   Französisch: "FR"
   Spanisch: "ES"
   Italienisch: "IT"
-  Portugiesisch: "PT"
+  Portugiesisch (PT): "PT-PT"
+  Portugiesisch (BR): "PT-BR"
   Niederländisch: "NL"
   Polnisch: "PL"
 

@@ -1,5 +1,109 @@
 # Changelog — LocalTranslate
 
+## 2026-09-29
+
+### Added
+- `config.yaml`: Portuguese split into two separate language entries,
+  `Portugiesisch (PT): "PT-PT"` and `Portugiesisch (BR): "PT-BR"`, replacing
+  the single generic `Portugiesisch: "PT"` — Microsoft Terminology
+  Collection ships separate term lists per variant
+  (`terminology/<mindset>/pt-pt.json` / `pt-br.json`), no generic `pt.json`
+  anymore. `terminology/terminology.py` needed no change — `TermEngine._load()`
+  already lowercases the language code before building the file path, so
+  `"PT-PT"`/`"PT-BR"` resolve to the right files as-is.
+- `engines/external.py`: new `_base_lang()` helper, used to strip the
+  regional suffix where an API doesn't accept it — DeepL's `source_lang`
+  only accepts the base `"PT"` (its `target_lang` does distinguish
+  `PT-BR`/`PT-PT`, left as-is), and LibreTranslate's self-hosted Argos
+  models generally ship one generic Portuguese model, not separate
+  regional ones, so both its `source`/`target` are normalized. MyMemory
+  and Lara pass the regional code through unchanged per their documented
+  langpair/locale support — not verified against a live account, see
+  `MAINTENANCE_translator.md`.
+- `test/timing_estimates.py` — learns median seconds-per-1000-characters per
+  model from `logs/perf.csv`, persists it as `logs/model_timings.json`
+  (generated at runtime next to `perf.csv`, no build-manifest entry needed).
+  Recomputed automatically at the end of every batch run, even on an early
+  stop. Used for a remaining-time estimate in the batch runner (see below).
+- `test/runner_core.py`: chunk-level progress in the progress callback
+  (`chunk_idx`/`chunk_total`/`eta_seconds`), shown in `test_gui.py`'s status
+  line (`Chunk 5/40 | ETA: ~04:12`). The pre-run matrix label also shows a
+  rough total-time estimate for the currently configured selection, based on
+  source file size and any existing timing data.
+- `test/run_state.py` — on-disk state for the batch runner, replacing the
+  old "resume the single most recently created run" model with real
+  chunk-level resume:
+  - `run_settings.json` (written once per run) — the original
+    sources/models/targets/mindsets and options, so a later Resume can show
+    and restore exactly what a run was configured with instead of requiring
+    the user to manually re-select matching axes.
+  - `chunks/<combo_id>.json` (one per currently-in-progress combination,
+    deleted once it finishes) — chars/time/similarity per finished chunk,
+    S1/S2 completion flags, resolved mindset, the result filename, and the
+    exact byte offset in the result `.md` right after the last confirmed
+    chunk. Written atomically (temp file + `os.replace()`).
+  - `list_resumable_runs()` — every incomplete `run_*` folder under
+    `results/`, not just the most recent one.
+- `test/runner_core.py`: each result `.md` is now written incrementally
+  instead of only once at the end of a combination — header + fully chunked
+  source text once at combo start, then one `<!-- lt-chunk N/T | ... -->`
+  marker + translated block appended per finished chunk (never rewritten),
+  and a closing Performance Log/Warnings/S2/Done block once the whole combo
+  completes. On resume, the `.md` is truncated back to the sidecar's
+  confirmed byte offset (discarding any dangling data from an interrupted
+  write) and already-done chunks are recovered from their marker comments
+  instead of being re-translated — a multi-hour, many-chunk combination
+  (e.g. one whole book) no longer has to restart from chunk 0 after a crash
+  or a deliberate Stop. Stop is now checked before every chunk (and before
+  S2), not just once per combination, so it takes effect immediately.
+- `test_gui.py`: "Resume run" now opens a picker listing every incomplete
+  run under `results/` (name, done/total combinations, last-modified time),
+  not just the most recently created one, and restores the original
+  source/model/target/mindset selection from `run_settings.json` when one
+  is picked.
+
+### Fixed
+- `test/runner_core.py`: a resumed run whose original selection could no
+  longer be fully restored (e.g. an Ollama model used by the original run
+  was deleted since) continued with a smaller combo matrix — and once that
+  smaller matrix finished, `batch_done.marker` was written unconditionally,
+  reporting the run as complete even though part of its original scope
+  never ran. `run_batch_session()` now takes `expected_combo_total` (the
+  combo count the run was originally configured for, passed by `test_gui.py`
+  from `run_settings.json`); the marker is only written when the combos
+  actually given match or exceed it. `test_gui.py`'s
+  `_restore_selection_from_settings()` now reports exactly which
+  sources/models/targets/mindsets couldn't be restored, so `_resume_run()`
+  can warn and ask for confirmation before proceeding with a reduced
+  selection instead of dropping them silently.
+- `test/runner_core.py`: a combination whose translation call raised (e.g. a
+  transient server error) was logged as `status: "error"` in
+  `batch_progress.jsonl` and correctly excluded from `done_ids` — but the
+  final "mark this run complete" check only looked at whether the combo
+  *loop* had run to its end, not at whether every combo in it actually
+  finished successfully. A single permanently-failing combination could
+  therefore still let `batch_done.marker` be written, silently hiding a
+  missing matrix cell. Now cross-checks every combo actually given against
+  what `batch_progress.jsonl` confirms as done before writing the marker,
+  and logs exactly which combo_id(s) failed if it doesn't write it.
+- `test/run_state.py`: `chunks/<combo_id>.json` sidecar filenames now always
+  include a SHA1 hash of the full `combo_id`, not just a
+  truncated-to-200-characters prefix — guarantees two different combo_ids
+  can never collide on the same state file, however long an unusual
+  combo_id gets.
+- `test/runner_core.py`: a chunk failing with an HTTP error from the server
+  (e.g. `translategemma:4b` reproducibly returning 500 partway through a
+  long legal-mindset document) only ever surfaced as `HTTP Error 500:
+  Internal Server Error` in the batch runner's log — the actual reason
+  (`app.py`'s `HTTPException(..., detail="Ollama error: ...")`) sits in the
+  response body, which `urllib.request.urlopen()`'s raised `HTTPError`
+  doesn't read on its own, and neither `app.py` nor `engines/ollama.py`
+  print anything server-side for a handled `HTTPException` — so the actual
+  cause wasn't available even from the server console. New `_urlopen()`
+  wrapper (used by every HTTP call in `runner_core.py`) reads the error
+  body and folds its `detail` into the raised message, so the real reason
+  now shows up directly in the run's own log.
+
 ## 2026-09-27
 
 ### Added

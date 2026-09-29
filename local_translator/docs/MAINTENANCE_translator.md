@@ -320,6 +320,59 @@ LLM batch-classification pass for the remaining grey zone was discussed as a fut
 
 ---
 
+## A handled HTTPException never prints a traceback — check the response body, not the console
+
+**Symptom:** `/translate/chunk` (or any endpoint) returns a 500, and there's
+nothing useful in the server console beyond uvicorn's one-line access log
+(`POST /translate/chunk HTTP/1.1" 500`) — no Python traceback, even though
+the server is right there running.
+
+**Cause:** every `except Exception` in `engines/ollama.py`/`engines/external.py`
+re-raises as `HTTPException(status_code=..., detail=f"... {e}")` — from
+FastAPI's point of view this is a *handled* error, not a crash, so nothing
+gets printed. `app.py` has no global exception handler and no `logging`
+setup either. The one place the real reason (`str(e)`) actually exists is
+the `detail` field of the JSON error body FastAPI sends back — which is
+easy to lose if the caller's HTTP client doesn't read it.
+
+**Where this bit:** `test/runner_core.py`'s HTTP helpers used plain
+`urllib.request.urlopen()` — on a non-2xx response it raises `HTTPError`
+*before* the response body is ever read, so the batch runner's log showed
+only `HTTP Error 500: Internal Server Error`, with the actual `"Ollama
+error: ..."` detail sitting unread in the error body. Fixed via `_urlopen()`
+in `runner_core.py`, which reads `e.read()` and folds the JSON `detail`
+into the raised message.
+
+**Takeaway for any future HTTP client code against this server:** don't
+assume the server console has more information than the response body —
+for a handled `HTTPException` it usually has less. Read the error body.
+
+---
+
+## Regional language variants (PT-PT/PT-BR) — not every API treats them the same
+
+`config.yaml` lists Portuguese as two codes, `PT-PT` and `PT-BR` (see
+`REFERENCE_translator.md` → "Language code conventions"). These codes go
+straight through to whichever external engine is selected — and the four
+engines don't agree on whether a regional suffix is valid:
+
+- **DeepL:** `target_lang` distinguishes `PT-BR`/`PT-PT` (required since
+  2021; a bare `PT` is a deprecated alias for `PT-PT`). `source_lang`
+  does **not** accept a regional suffix at all — sending `PT-BR`/`PT-PT` as
+  source returns a 400. `engines/external.py`'s `translate_deepl()` strips
+  it via `_base_lang()` for `source_lang` only.
+- **LibreTranslate:** self-hosted Argos models generally ship one generic
+  `pt` model, not separate regional ones — `translate_libretranslate()`
+  strips the suffix on both `source` and `target`.
+- **MyMemory / Lara:** left passing the regional code through unchanged,
+  based on their documented langpair/locale support — **not verified
+  against a live account**. If Portuguese translation ever fails
+  specifically when picking `PT-PT`/`PT-BR` as source or target with one of
+  these two engines, this is the first place to check — add the same
+  `_base_lang()` normalization there too.
+
+---
+
 ## Quality test runner — test/test.py
 
 `test.py` calls `/translate/chunk` directly — same endpoint as the UI chunking loop. This means term engine, S2 pass, and perf logging all fire exactly as in production.
@@ -329,6 +382,107 @@ LLM batch-classification pass for the remaining grey zone was discussed as a fut
 **S2 in test mode:** `test.py` calls `/translate/chunk` with `s2_model` set — S2 runs server-side as part of the chunk request, same as in the UI. The S2 time shown in the result MD is wall-clock time for the full request, not isolated S2 time (perf.csv has the split).
 
 **Source file size:** keep source files under the Ollama chunk limit (6 000 chars by default) — test.py sends the full file as a single chunk. If the file exceeds the limit, the server will still process it but context continuity is not guaranteed.
+
+This is the older, CSV-driven runner. `test/test_gui.py` + `test/runner_core.py`
+(see next section) is the actively developed one — Tkinter GUI, a full
+source×model×target×mindset matrix, and chunk-level resume. `test.py` still
+has its place for a quick single-configuration CSV-driven check; it was
+deliberately not touched by the resume work below (different code path, no
+shared helper — same caveat as `/translate` vs `/translate/chunk` elsewhere
+in this doc).
+
+---
+
+## Batch runner (test_gui.py) — chunk-level resume state
+
+The GUI batch runner can run for hours against a large matrix, or against a
+single very long document (many chunks in one combination) — a crash or a
+deliberate Stop must not mean starting that combination over from chunk 0.
+Three files cooperate, all under a run's `results/run_<nr>_<date>_<rest>/`
+folder:
+
+```
+run_settings.json        the original source/model/target/mindset selection
+                          + options — written once, read back by the Resume
+                          picker (test_gui.py) to show/restore what a run
+                          was configured with.
+
+batch_progress.jsonl      one line per combo_id once it's fully done or has
+                          permanently errored (status: "done"/"error") —
+                          unchanged from before this session, still the
+                          source of truth for "is this whole combination
+                          finished".
+
+chunks/<combo_id>.json    ONLY while that one combination is still running —
+                          deleted the moment it finishes. Chars/time/
+                          similarity per confirmed chunk, S1/S2 completion
+                          flags, the resolved mindset + result filename
+                          (pinned here so a resumed auto-detect run can't
+                          drift onto a different mindset/filename than the
+                          interrupted attempt), and the exact byte offset in
+                          the result .md right after the last confirmed
+                          chunk.
+```
+
+**Why the translated text lives in the .md, not the JSON:** `chunks/<id>.json`
+deliberately stores no text, only chars/time/similarity — the result `.md`
+is the actual content, the JSON is just a lightweight index into it. Every
+finished chunk gets a marker comment immediately before its text, `<!--
+lt-chunk N/total | chars chars | secs s -->` (`_format_chunk_block()` in
+`runner_core.py`), and `_parse_chunk_blocks()` finds these markers with a
+regex to recover already-translated chunks on resume, without needing to
+re-run them through the model.
+
+**Byte-offset truncation is what makes this crash-safe, not just
+stop-safe.** Every JSON update sets `md_byte_offset` to
+`md_path.stat().st_size` measured *immediately after* the corresponding `.md`
+write completes and closes — never before. That ordering is the whole
+mechanism: a crash before a write finishes leaves the sidecar pointing at
+the *previous* confirmed offset, so on resume the `.md` gets truncated
+(`f.truncate(offset)`) back to a point that's guaranteed to be complete and
+matches what the sidecar's chunk table says — any dangling, half-written
+data past that point is simply cut away and redone. Do not update
+`md_byte_offset` (or any "done" flag) before the write it describes has
+actually returned from its `with ... open("a") ...:` block — reordering
+those two lines reintroduces exactly the bug this design avoids.
+
+**S1/S2 is a two-phase state, not one flag.** `s1_done` and `s2_done` are
+tracked separately (plus `time_s2`, so the closing Performance block can
+report it correctly even when S2 was already done in an earlier attempt).
+A crash between "all S1 chunks done" and "S2 call made" resumes straight
+into the S2 call, without re-translating any S1 chunk — verified by
+deliberately raising inside the S2 branch in a test run and resuming for
+real afterward (see session notes / CHANGELOG 2026-09-29).
+
+**`expected_combo_total` — don't let a partial run look "done".** Two ways
+a batch could quietly finish "successfully" while missing part of its
+originally intended scope, both closed by the same mechanism:
+
+1. Resuming after something in the original selection is no longer
+   available (a source file deleted, an Ollama model uninstalled) — the
+   GUI can only restore a *subset* of the original axes.
+2. One combination in the matrix errors out permanently (e.g. a transient
+   server error that doesn't get retried within the run) while the rest
+   succeed.
+
+`run_batch_session()` takes `expected_combo_total` (from `run_settings.json`,
+via `test_gui.py`) and, before writing `batch_done.marker`, checks **both**
+that `len(combos) >= expected_combo_total` **and** that every combo_id
+actually given to it shows up as `"done"` in `batch_progress.jsonl` — not
+just that the for-loop reached its end (the per-combo `except Exception:`
+block logs an `"error"` record and `continue`s, so the loop always finishes
+even when a combination permanently fails). If either check fails, the
+marker is withheld and a clear log line names what's missing/failed —
+`list_resumable_runs()` then keeps listing the run as open. When adding any
+new way for a combo to be silently skipped, make sure it still shows up as
+neither `"done"` nor left completely unrecorded — an unrecorded combo would
+pass both checks above while never actually having been attempted.
+
+**Sidecar filenames:** `run_state._safe_combo_filename()` always appends a
+short hash of the full `combo_id`, not just a truncated readable prefix —
+keep it that way; a prefix-only truncation risked (unlikely but possible)
+collisions between two long combo_ids sharing the same first ~150
+characters.
 
 ---
 
