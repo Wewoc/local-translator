@@ -42,8 +42,12 @@ Consult alongside `README_translator.md` and `MAINTENANCE_translator.md`.
 | `test/test.py` | Quality test runner — liest `test_config.csv`, ruft `/translate/chunk` direkt an |
 | `test/test.bat` | Wrapper — prüft Server-Erreichbarkeit, startet `test.py` |
 | `test/test_config.csv` | Testkonfiguration: quelle, S1, S2, target, mindset, source |
+| `test/test_gui.py` | Tkinter-GUI-Batch-Runner — Matrix aus Quelltexten × S1-Modellen × Targets × Mindsets, Start/Stop/Resume-Steuerung |
+| `test/runner_core.py` | Kernlogik des GUI-Runners — Server-Calls, Chunk-Loop, inkrementelles `.md`-Schreiben, Resume-Zustandsautomat (kein Tkinter hier, siehe `MAINTENANCE_translator.md`) |
+| `test/run_state.py` | On-disk-Zustand des GUI-Runners — `run_settings.json`, `chunks/<combo_id>.json`, `list_resumable_runs()` |
+| `test/timing_estimates.py` | Lernt Sekunden/1000 Zeichen pro Modell aus `logs/perf.csv`, persistiert als `logs/model_timings.json` — Basis für die ETA-Anzeige im GUI-Runner |
 | `test/source/` | Quelltexte für Testläufe — manuell befüllen |
-| `test/results/` | Ausgabe — eine MD-Datei pro Run, auto-generiert |
+| `test/results/` | Ausgabe — ein Run-Ordner pro Batch (`run_<nr>_<datum>_<rest>/`), darin `results/*.md`, `batch_progress.jsonl`, `run_settings.json`, `chunks/` — auto-generiert |
 | `terminology/` | Terminologielisten pro Mindset — committed to repo |
 | `terminology/{mindset}/de.json` | DE-Terme mit Hash-Codes |
 | `terminology/{mindset}/en.json` | EN-Terme mit Hash-Codes |
@@ -163,6 +167,14 @@ Das Backend `/translate/chunk` verarbeitet einen Chunk pro Request — kein Loop
 - MyMemory API expects uppercase pairs: `DE|EN` …
 - DeepL API expects uppercase: `DE`, `EN` …
 - Conversion handled per engine inside each `translate_*()` function in `engines/external.py`
+- **Regional variants (`PT-PT`/`PT-BR`):** `config.yaml` lists Portuguese as
+  two separate codes (see `languages` above) since the terminology engine
+  ships separate term lists per variant. Not every external API accepts a
+  regional suffix everywhere — `engines/external.py`'s `_base_lang()` strips
+  it back to `"PT"` where needed (DeepL `source_lang` always; LibreTranslate
+  `source`+`target` always, since self-hosted Argos models generally only
+  ship one generic Portuguese model). See `MAINTENANCE_translator.md` for
+  the per-engine rationale and what still needs live verification.
 
 ---
 

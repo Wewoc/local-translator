@@ -620,6 +620,14 @@ def run_batch_session(
                 continue
 
         if stop_event is None or not stop_event.is_set():
+            # A combo whose except-branch above logged an "error" record
+            # must not let the run be reported as complete just because the
+            # for-loop otherwise ran to its end — re-check what's actually
+            # confirmed done in batch_progress.jsonl rather than assuming it.
+            combo_ids = {c.combo_id() for c in combos}
+            finished_ids = _load_done_ids(progress_path)
+            failed_ids = sorted(combo_ids - finished_ids)
+
             if expected_combo_total is not None and len(combos) < expected_combo_total:
                 log_callback(
                     f"All {len(combos)} selected combination(s) finished, but this run was "
@@ -627,6 +635,12 @@ def run_batch_session(
                     "Some source(s)/model(s)/target(s)/mindset(s) from the original selection "
                     "weren't available this time; restore the full original selection and "
                     "resume again to actually finish this run."
+                )
+            elif failed_ids:
+                log_callback(
+                    f"{len(combo_ids) - len(failed_ids)}/{len(combo_ids)} combination(s) finished, "
+                    f"but NOT marking as complete — {len(failed_ids)} permanently failed: "
+                    f"{', '.join(failed_ids)}. Fix the underlying error and resume again to retry them."
                 )
             else:
                 done_marker.write_text(datetime.now().isoformat(), encoding="utf-8")
