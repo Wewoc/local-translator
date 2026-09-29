@@ -57,7 +57,8 @@ _NO_S2_LABEL = "— no S2 —"
 # up in German rather than crashing.
 LANGUAGE_DISPLAY_EN = {
     "Deutsch": "German", "Englisch": "English", "Französisch": "French",
-    "Spanisch": "Spanish", "Italienisch": "Italian", "Portugiesisch": "Portuguese",
+    "Spanisch": "Spanish", "Italienisch": "Italian",
+    "Portugiesisch (PT)": "Portuguese (PT)", "Portugiesisch (BR)": "Portuguese (BR)",
     "Niederländisch": "Dutch", "Polnisch": "Polish",
     "Russisch": "Russian", "Chinesisch": "Chinese", "Japanisch": "Japanese",
 }

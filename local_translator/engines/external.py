@@ -31,6 +31,17 @@ from core.config import (
 )
 from core.logging import add_lara_usage
 
+# ── Regional-variant handling ───────────────────────────────────────────────────
+# config.yaml lists Portuguese as two regional codes, "PT-PT"/"PT-BR" (separate
+# Microsoft Terminology lists per variant). DeepL's target_lang distinguishes
+# them, but its source_lang does not accept a regional suffix at all (400 if
+# you pass "PT-BR"/"PT-PT" as source) — only the base "PT". Strip the region
+# for any engine call where the API only knows the base language.
+
+def _base_lang(lang: str) -> str:
+    """"PT-BR"/"PT-PT" -> "PT"; every other code passes through unchanged."""
+    return lang.split("-")[0].upper()
+
 # ── DeepL ─────────────────────────────────────────────────────────────────────
 
 async def translate_deepl(text: str, source_lang: str, target_lang: str) -> str:
@@ -44,7 +55,9 @@ async def translate_deepl(text: str, source_lang: str, target_lang: str) -> str:
     params = {
         "auth_key":   DEEPL_KEY,
         "text":       text,
-        "source_lang": source_lang.upper(),
+        # source_lang: DeepL has no regional variants here, only the base code
+        "source_lang": _base_lang(source_lang),
+        # target_lang: DeepL does distinguish PT-BR/PT-PT, pass through as-is
         "target_lang": target_lang.upper(),
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -64,8 +77,10 @@ async def translate_libretranslate(text: str, source_lang: str, target_lang: str
         raise HTTPException(status_code=400, detail="LibreTranslate not enabled.")
     payload: dict = {
         "q":      text,
-        "source": source_lang.lower(),
-        "target": target_lang.lower(),
+        # self-hosted Argos models generally ship one generic Portuguese model
+        # ("pt"), not separate PT-PT/PT-BR variants — use the base code here
+        "source": _base_lang(source_lang).lower(),
+        "target": _base_lang(target_lang).lower(),
         "format": "text",
     }
     if LIBRE_KEY:
