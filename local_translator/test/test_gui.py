@@ -29,6 +29,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+import run_state
 import runner_core as core
 import timing_estimates
 
@@ -122,7 +123,6 @@ class BatchTestGui:
         self._worker_thread: threading.Thread | None = None
         self._run_start_time: float | None = None
         self._active_output_dir: Path | None = None
-        self._resume_available = False
 
         self._build_widgets()
         self._reload_everything()
@@ -479,21 +479,20 @@ class BatchTestGui:
         self.preview_label.config(text=f"Folder name: {name}")
 
     def _check_resumable_run(self) -> None:
-        resumable = core.find_resumable_run(RESULTS_ROOT)
-        if resumable is None:
-            return
-        parsed = parse_run_folder_name(resumable.name)
-        if parsed is not None:
-            nr, datum, rest = parsed
-            self.nr_var.set(nr)
-            self.datum_var.set(datum)
-            self.freitext_var.set(rest)
-            self._update_preview()
-        self._active_output_dir = resumable
-        self._resume_available = True
-        self.resume_button.config(state="normal")
-        self._append_log(f"Incomplete run found: {resumable.name} — re-select the same "
-                          "sources/models/mindsets/targets and click 'Resume run'.")
+        self._refresh_resume_availability()
+
+    def _refresh_resume_availability(self) -> None:
+        """Enables the Resume button whenever at least one run_*-folder is
+        incomplete (batch_progress.jsonl but no batch_done.marker) — not
+        just the most recent one. 'Resume run' always re-lists fresh from
+        disk (see _on_resume), so nothing needs to be cached here."""
+        runs = run_state.list_resumable_runs(RESULTS_ROOT)
+        self.resume_button.config(state="normal" if runs else "disabled")
+        if runs:
+            summary = ", ".join(
+                f"{r['name']} ({r['done']}/{r['total'] if r['total'] is not None else '?'})" for r in runs
+            )
+            self._append_log(f"Open run(s) found: {summary} — click 'Resume run' to continue one.")
 
     # ── Log ────────────────────────────────────────────────────────────
 
@@ -551,19 +550,116 @@ class BatchTestGui:
             return
 
         output_dir = RESULTS_ROOT / folder_name
+        run_state.write_run_settings(output_dir, self._current_run_settings())
         self._start_run(output_dir, resume=False)
 
     def _on_resume(self) -> None:
-        if not self._resume_available or self._active_output_dir is None:
-            return
         if self._worker_thread is not None and self._worker_thread.is_alive():
             return
-        if not (self._selected_sources and self._selected_models
-                and self._selected_mindsets and self._selected_targets):
-            messagebox.showwarning("Selection missing",
-                                    "Re-select the same sources/models/mindsets/targets as the original run.")
+        runs = run_state.list_resumable_runs(RESULTS_ROOT)
+        if not runs:
+            messagebox.showinfo("No open runs", "No incomplete run was found to resume.")
+            self.resume_button.config(state="disabled")
             return
-        self._start_run(self._active_output_dir, resume=True)
+        self._show_resume_picker(runs)
+
+    def _show_resume_picker(self, runs: list[dict]) -> None:
+        picker = tk.Toplevel(self.root)
+        picker.title("Resume run")
+        picker.transient(self.root)
+        picker.grab_set()
+
+        tk.Label(picker, text="Open (incomplete) runs — pick one to resume:").pack(
+            anchor="w", padx=10, pady=(10, 5))
+        listbox = tk.Listbox(picker, width=75, height=min(10, len(runs)), exportselection=False)
+        listbox.pack(fill="both", expand=True, padx=10)
+        for r in runs:
+            total_str = str(r["total"]) if r["total"] is not None else "?"
+            when = datetime.fromtimestamp(r["mtime"]).strftime("%Y-%m-%d %H:%M") if r["mtime"] else "—"
+            settings_note = "" if r["settings"] else "  [no saved selection — re-select manually]"
+            listbox.insert(tk.END, f"{r['name']}  —  {r['done']}/{total_str} combination(s) done  —  "
+                                    f"{when}{settings_note}")
+        listbox.selection_set(0)
+
+        btn_frame = tk.Frame(picker)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        def do_resume() -> None:
+            sel = listbox.curselection()
+            if not sel:
+                return
+            entry = runs[sel[0]]
+            picker.destroy()
+            self._resume_run(entry)
+
+        tk.Button(btn_frame, text="Resume selected", command=do_resume,
+                  bg="#2e7d32", fg="white").pack(side="left")
+        tk.Button(btn_frame, text="Cancel", command=picker.destroy).pack(side="left", padx=(5, 0))
+
+    def _resume_run(self, entry: dict) -> None:
+        settings = entry.get("settings")
+        if settings:
+            self._restore_selection_from_settings(settings)
+        else:
+            messagebox.showwarning(
+                "No saved selection",
+                "This run predates saved run settings — re-select the same "
+                "sources/models/mindsets/targets yourself before resuming.",
+            )
+        parsed = parse_run_folder_name(entry["name"])
+        if parsed is not None:
+            nr, datum, rest = parsed
+            self.nr_var.set(nr)
+            self.datum_var.set(datum)
+            self.freitext_var.set(rest)
+            self._update_preview()
+        self._start_run(entry["path"], resume=True)
+
+    def _restore_selection_from_settings(self, settings: dict) -> None:
+        """Best-effort: a source/model/target/mindset the original run used
+        but that's no longer available now (file deleted, Ollama model
+        list changed) is silently dropped, same as _reload_everything()
+        already does — check the 'Selected' boxes before starting."""
+        src_names = set(settings.get("sources", []))
+        self._selected_sources = [p for p in self._sources_all if p.name in src_names]
+        model_names = set(settings.get("models", []))
+        self._selected_models = [m for m in self._models_all if m in model_names]
+        target_codes = {code for _label, code in settings.get("targets", [])}
+        self._selected_targets = [t for t in self._targets_all if t[1] in target_codes]
+        mindset_keys = {m.get("key") for m in settings.get("mindsets", [])}
+        self._selected_mindsets = [c for c in self._mindsets_all if c.key in mindset_keys]
+        self._refresh_selected_boxes()
+        self._update_matrix_label()
+
+        src_lang = settings.get("source_lang")
+        if src_lang:
+            for label, code in self._targets_all:
+                if code == src_lang:
+                    self.source_lang_var.set(label)
+                    break
+        s2 = settings.get("s2_model") or _NO_S2_LABEL
+        if s2 in (self.s2_combo["values"] or ()):
+            self.s2_var.set(s2)
+        if settings.get("mindset_model") is not None:
+            self.mindset_model_var.set(settings["mindset_model"])
+        level = settings.get("coherence_level")
+        if level:
+            for label, lvl in COHERENCE_LEVELS:
+                if lvl == level:
+                    self.coherence_level_var.set(label)
+                    break
+
+    def _current_run_settings(self) -> dict:
+        return {
+            "sources": [p.name for p in self._selected_sources],
+            "models": list(self._selected_models),
+            "targets": [[label, code] for label, code in self._selected_targets],
+            "mindsets": [{"key": c.key, "label": c.label} for c in self._selected_mindsets],
+            "source_lang": self._current_source_lang_code(),
+            "s2_model": self._current_s2_model(),
+            "mindset_model": self.mindset_model_var.get().strip(),
+            "coherence_level": self._current_coherence_level(),
+        }
 
     def _set_locked(self, locked: bool) -> None:
         state = "disabled" if locked else "normal"
@@ -579,7 +675,6 @@ class BatchTestGui:
         self._active_output_dir = output_dir
         self._stop_event = threading.Event()
         self._run_start_time = time.monotonic()
-        self._resume_available = False
 
         self.start_button.config(state="disabled")
         self.resume_button.config(state="disabled")
@@ -621,7 +716,8 @@ class BatchTestGui:
         if self._stop_event is not None:
             self._stop_event.set()
             self.stop_button.config(state="disabled")
-            self._append_log("Stop requested — current combination is still being finished ...")
+            self._append_log("Stop requested — will pause after the current chunk "
+                              "(no progress is lost, safe to resume) ...")
 
     # ── Queue polling ──────────────────────────────────────────────────
 
@@ -669,8 +765,7 @@ class BatchTestGui:
         self.start_button.config(state="normal")
         self.stop_button.config(state="disabled")
         self._set_locked(False)
-        self._resume_available = self._stop_event is not None and self._stop_event.is_set()
-        self.resume_button.config(state="normal" if self._resume_available else "disabled")
+        self._refresh_resume_availability()
         self._worker_thread = None
 
 
