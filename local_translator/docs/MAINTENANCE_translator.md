@@ -320,6 +320,35 @@ LLM batch-classification pass for the remaining grey zone was discussed as a fut
 
 ---
 
+## A handled HTTPException never prints a traceback — check the response body, not the console
+
+**Symptom:** `/translate/chunk` (or any endpoint) returns a 500, and there's
+nothing useful in the server console beyond uvicorn's one-line access log
+(`POST /translate/chunk HTTP/1.1" 500`) — no Python traceback, even though
+the server is right there running.
+
+**Cause:** every `except Exception` in `engines/ollama.py`/`engines/external.py`
+re-raises as `HTTPException(status_code=..., detail=f"... {e}")` — from
+FastAPI's point of view this is a *handled* error, not a crash, so nothing
+gets printed. `app.py` has no global exception handler and no `logging`
+setup either. The one place the real reason (`str(e)`) actually exists is
+the `detail` field of the JSON error body FastAPI sends back — which is
+easy to lose if the caller's HTTP client doesn't read it.
+
+**Where this bit:** `test/runner_core.py`'s HTTP helpers used plain
+`urllib.request.urlopen()` — on a non-2xx response it raises `HTTPError`
+*before* the response body is ever read, so the batch runner's log showed
+only `HTTP Error 500: Internal Server Error`, with the actual `"Ollama
+error: ..."` detail sitting unread in the error body. Fixed via `_urlopen()`
+in `runner_core.py`, which reads `e.read()` and folds the JSON `detail`
+into the raised message.
+
+**Takeaway for any future HTTP client code against this server:** don't
+assume the server console has more information than the response body —
+for a handled `HTTPException` it usually has less. Read the error body.
+
+---
+
 ## Regional language variants (PT-PT/PT-BR) — not every API treats them the same
 
 `config.yaml` lists Portuguese as two codes, `PT-PT` and `PT-BR` (see

@@ -50,6 +50,38 @@ AUTO_MINDSET_LABEL = "Auto-detect"
 
 # ── Server queries ───────────────────────────────────────────────────────────
 
+def _urlopen(req, timeout: float):
+    """Thin wrapper around urllib.request.urlopen() that doesn't let a
+    non-2xx response's actual error detail get lost. app.py's endpoints
+    raise HTTPException(status_code=..., detail="...") on failure — that
+    detail is the one substantive clue for *why* a chunk failed (e.g.
+    "Ollama error: <reason>"), but it lives in the error response's body,
+    which urlopen()'s raised HTTPError does not surface on its own (str(e)
+    is just "HTTP Error 500: Internal Server Error"). Reading e.read() here
+    and folding it into the raised message means a batch run's own log
+    shows the real reason directly — no need to go find the server console,
+    which for a handled HTTPException like this doesn't print a traceback
+    anyway (see MAINTENANCE_translator.md)."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        raw = b""
+        try:
+            raw = e.read()
+        except Exception:
+            pass
+        detail = raw.decode("utf-8", errors="replace").strip()
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except Exception:
+            pass
+        url = req.full_url if isinstance(req, urllib.request.Request) else req
+        message = f"HTTP {e.code} from {url}"
+        if detail:
+            message += f": {detail}"
+        raise RuntimeError(message) from e
+
+
 def check_server() -> bool:
     try:
         urllib.request.urlopen(f"{SERVER_URL}/config", timeout=3)
@@ -59,19 +91,19 @@ def check_server() -> bool:
 
 
 def fetch_config() -> dict:
-    with urllib.request.urlopen(f"{SERVER_URL}/config", timeout=5) as resp:
+    with _urlopen(f"{SERVER_URL}/config", 5) as resp:
         return json.loads(resp.read())
 
 
 def fetch_ollama_models() -> list[str]:
-    with urllib.request.urlopen(f"{SERVER_URL}/ollama/status", timeout=5) as resp:
+    with _urlopen(f"{SERVER_URL}/ollama/status", 5) as resp:
         data = json.loads(resp.read())
     return list(data.get("models", []))
 
 
 def fetch_mindsets() -> dict[str, str]:
     """Returns {key: label}, e.g. {"general": "General", "technical": "Technical"}."""
-    with urllib.request.urlopen(f"{SERVER_URL}/mindsets", timeout=5) as resp:
+    with _urlopen(f"{SERVER_URL}/mindsets", 5) as resp:
         data = json.loads(resp.read())
     return {k: v.get("label", k) for k, v in data.items()}
 
@@ -86,7 +118,7 @@ def prepare_chunks(text: str) -> list[str]:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with _urlopen(req, 30) as resp:
         data = json.loads(resp.read())
     return data.get("chunks", [text])
 
@@ -99,7 +131,7 @@ def set_model(model: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    urllib.request.urlopen(req, timeout=10)
+    _urlopen(req, 10)
 
 
 def detect_mindset(text: str, mindset_model: str = "") -> str:
@@ -110,7 +142,7 @@ def detect_mindset(text: str, mindset_model: str = "") -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with _urlopen(req, 60) as resp:
         data = json.loads(resp.read())
     return data.get("mindset", "general")
 
@@ -146,7 +178,7 @@ def translate_chunk(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with _urlopen(req, 300) as resp:
         return json.loads(resp.read())
 
 

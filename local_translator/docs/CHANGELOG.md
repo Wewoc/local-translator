@@ -91,6 +91,18 @@
   truncated-to-200-characters prefix — guarantees two different combo_ids
   can never collide on the same state file, however long an unusual
   combo_id gets.
+- `test/runner_core.py`: a chunk failing with an HTTP error from the server
+  (e.g. `translategemma:4b` reproducibly returning 500 partway through a
+  long legal-mindset document) only ever surfaced as `HTTP Error 500:
+  Internal Server Error` in the batch runner's log — the actual reason
+  (`app.py`'s `HTTPException(..., detail="Ollama error: ...")`) sits in the
+  response body, which `urllib.request.urlopen()`'s raised `HTTPError`
+  doesn't read on its own, and neither `app.py` nor `engines/ollama.py`
+  print anything server-side for a handled `HTTPException` — so the actual
+  cause wasn't available even from the server console. New `_urlopen()`
+  wrapper (used by every HTTP call in `runner_core.py`) reads the error
+  body and folds its `detail` into the raised message, so the real reason
+  now shows up directly in the run's own log.
 
 ## 2026-09-27
 
