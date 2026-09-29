@@ -346,13 +346,23 @@ def run_batch_session(
     progress_callback=lambda info: None,
     stop_event=None,
     resume: bool = False,
+    expected_combo_total: int | None = None,
 ) -> None:
     """Runs every combo in `combos` against the LocalTranslate server and
     writes one result .md per combo into output_dir/results/. Progress is
     appended to output_dir/batch_progress.jsonl immediately after each combo
     so a stopped run can be resumed (already-done combo_ids are skipped) —
     and within a combo, chunk-by-chunk via output_dir/chunks/<combo_id>.json
-    (see run_state.py and the module docstring above)."""
+    (see run_state.py and the module docstring above).
+
+    expected_combo_total: the combo count the run was *originally*
+    configured for (from run_settings.json), passed by the GUI on resume.
+    If `combos` is smaller than this — e.g. an Ollama model used by the
+    original run was since deleted, and the GUI could only restore part
+    of the selection — finishing every combo actually given here must
+    NOT write done.marker: the run would otherwise be reported as
+    complete while part of its original scope silently never ran.
+    None (a fresh, non-resumed run) skips this check entirely."""
     output_dir.mkdir(parents=True, exist_ok=True)
     results_dir = output_dir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -610,8 +620,17 @@ def run_batch_session(
                 continue
 
         if stop_event is None or not stop_event.is_set():
-            done_marker.write_text(datetime.now().isoformat(), encoding="utf-8")
-            log_callback(f"Done. Results in: {results_dir}")
+            if expected_combo_total is not None and len(combos) < expected_combo_total:
+                log_callback(
+                    f"All {len(combos)} selected combination(s) finished, but this run was "
+                    f"originally configured for {expected_combo_total} — NOT marking as complete. "
+                    "Some source(s)/model(s)/target(s)/mindset(s) from the original selection "
+                    "weren't available this time; restore the full original selection and "
+                    "resume again to actually finish this run."
+                )
+            else:
+                done_marker.write_text(datetime.now().isoformat(), encoding="utf-8")
+                log_callback(f"Done. Results in: {results_dir}")
     finally:
         # Folds this run's freshly logged perf.csv rows into the persisted
         # timing estimates for next time — even on an early stop, whatever

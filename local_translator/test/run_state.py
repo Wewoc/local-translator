@@ -30,10 +30,10 @@ these are read back to decide whether translated work can be reused, so a
 half-written file must never be mistaken for a valid one.
 """
 
+import hashlib
 import json
 import os
 import re
-import time
 from pathlib import Path
 
 RUN_SETTINGS_FILENAME = "run_settings.json"
@@ -69,8 +69,14 @@ def read_run_settings(output_dir: Path) -> dict | None:
 # ── Per-combo chunk progress ─────────────────────────────────────────────────
 
 def _safe_combo_filename(combo_id: str) -> str:
+    """A readable prefix plus a hash of the full combo_id — the hash alone
+    guarantees uniqueness (two different combo_ids never collide, even if
+    an unusually long one would otherwise be truncated to the same
+    prefix as another); the prefix is just so the filename stays
+    recognizable when browsing the chunks/ folder by hand."""
     safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in combo_id)
-    return safe[:200] + ".json"
+    digest = hashlib.sha1(combo_id.encode("utf-8")).hexdigest()[:10]
+    return f"{safe[:150]}_{digest}.json"
 
 
 def combo_progress_path(output_dir: Path, combo_id: str) -> Path:

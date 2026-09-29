@@ -598,8 +598,28 @@ class BatchTestGui:
 
     def _resume_run(self, entry: dict) -> None:
         settings = entry.get("settings")
+        expected_combo_total = None
         if settings:
-            self._restore_selection_from_settings(settings)
+            missing = self._restore_selection_from_settings(settings)
+            expected_combo_total = (len(settings.get("sources", [])) * len(settings.get("models", []))
+                                     * len(settings.get("targets", [])) * len(settings.get("mindsets", [])))
+            restored_total = (len(self._selected_sources) * len(self._selected_models)
+                               * len(self._selected_targets) * len(self._selected_mindsets))
+            if any(missing.values()):
+                missing_desc = "; ".join(
+                    f"{axis}: {', '.join(vals)}" for axis, vals in missing.items() if vals
+                )
+                proceed = messagebox.askyesno(
+                    "Original selection incomplete",
+                    f"This run was originally configured for {expected_combo_total} combination(s), "
+                    f"but only {restored_total} can be restored now — missing ({missing_desc}).\n\n"
+                    "Continuing will run only the reduced selection, and this run will NOT be marked "
+                    "complete afterward (so you can still finish it later once the missing "
+                    "source/model/target/mindset is available again).\n\n"
+                    "Continue with the reduced selection?",
+                )
+                if not proceed:
+                    return
         else:
             messagebox.showwarning(
                 "No saved selection",
@@ -613,21 +633,32 @@ class BatchTestGui:
             self.datum_var.set(datum)
             self.freitext_var.set(rest)
             self._update_preview()
-        self._start_run(entry["path"], resume=True)
+        self._start_run(entry["path"], resume=True, expected_combo_total=expected_combo_total)
 
-    def _restore_selection_from_settings(self, settings: dict) -> None:
+    def _restore_selection_from_settings(self, settings: dict) -> dict[str, list[str]]:
         """Best-effort: a source/model/target/mindset the original run used
         but that's no longer available now (file deleted, Ollama model
-        list changed) is silently dropped, same as _reload_everything()
-        already does — check the 'Selected' boxes before starting."""
+        list changed) is dropped from the restored selection, same as
+        _reload_everything() already does for a live selection — but here
+        it's reported back (see _resume_run) instead of silently
+        swallowed, since a caller finishing a *reduced* resumed run must
+        not mistake it for the run's original full scope."""
         src_names = set(settings.get("sources", []))
         self._selected_sources = [p for p in self._sources_all if p.name in src_names]
+        missing_sources = sorted(src_names - {p.name for p in self._sources_all})
+
         model_names = set(settings.get("models", []))
         self._selected_models = [m for m in self._models_all if m in model_names]
+        missing_models = sorted(model_names - set(self._models_all))
+
         target_codes = {code for _label, code in settings.get("targets", [])}
         self._selected_targets = [t for t in self._targets_all if t[1] in target_codes]
+        missing_targets = sorted(target_codes - {t[1] for t in self._targets_all})
+
         mindset_keys = {m.get("key") for m in settings.get("mindsets", [])}
         self._selected_mindsets = [c for c in self._mindsets_all if c.key in mindset_keys]
+        missing_mindsets = sorted(mindset_keys - {c.key for c in self._mindsets_all})
+
         self._refresh_selected_boxes()
         self._update_matrix_label()
 
@@ -649,6 +680,9 @@ class BatchTestGui:
                     self.coherence_level_var.set(label)
                     break
 
+        return {"sources": missing_sources, "models": missing_models,
+                "targets": missing_targets, "mindsets": missing_mindsets}
+
     def _current_run_settings(self) -> dict:
         return {
             "sources": [p.name for p in self._selected_sources],
@@ -669,7 +703,7 @@ class BatchTestGui:
                   self.nr_entry, self.datum_entry, self.freitext_entry):
             w.config(state=state)
 
-    def _start_run(self, output_dir: Path, resume: bool) -> None:
+    def _start_run(self, output_dir: Path, resume: bool, expected_combo_total: int | None = None) -> None:
         combos = core.build_matrix(self._selected_sources, self._selected_models,
                                     self._selected_targets, self._selected_mindsets)
         self._active_output_dir = output_dir
@@ -704,6 +738,7 @@ class BatchTestGui:
                     output_dir=output_dir, perf_log=PERF_LOG,
                     log_callback=log_cb, progress_callback=progress_cb,
                     stop_event=stop_event, resume=resume,
+                    expected_combo_total=expected_combo_total,
                 )
                 event_queue.put({"type": "done"})
             except Exception as exc:
